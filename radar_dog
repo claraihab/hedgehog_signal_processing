@@ -44,6 +44,7 @@ fft_step_size = 1 / frame_time   # step_size of FFT result, the bins are fft_ste
 # expected distance bin
 expected_bin = int(target_distance / km)
 search_width = 5  # +/- bins around expected distance
+print(f"Expected bin: {expected_bin}, km: {km:.4f} m/bin")
 
 
 data = np.load(file, mmap_mode='r')  # shape: (frames, tx, rx, samples)
@@ -146,6 +147,3 @@ for f in range(window, frame_count):
 # Save results
 np.save(path + r"\respiration.npy", respiration_rate)
 np.save(path+ r"\heartrate.npy", heart_rate)
-
-
-print(f"Expected bin: {expected_bin}, km: {km:.4f} m/bin")
