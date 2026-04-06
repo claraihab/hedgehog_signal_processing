@@ -1,0 +1,151 @@
+#PACKAGES NEEDED
+import numpy as np 
+import json
+import matplotlib.pyplot as plt
+from scipy.signal import butter, filtfilt
+# FILE PATHS
+
+path = r"C:\Users\Clara Guindy\Desktop\thesis_hedgie\RadarIfxBGT60TR13C_00" #dog one
+file = path + r"\radar.npy"
+config = path + r"\config.json"
+result = path +"\\angles.npy"
+
+# RADAR CONFIG
+with open(config) as f:
+    device_config = json.load(f)['device_config']['fmcw_single_shape']
+
+freq_start = device_config['start_frequency_Hz']
+freq_stop = device_config['end_frequency_Hz']
+samples_per_chirp = device_config['num_samples_per_chirp']  # 60
+chirps_per_frame = device_config['num_chirps_per_frame']    # 8
+sample_rate = device_config['sample_rate_Hz']
+chirp_rep_time = device_config['chirp_repetition_time_s']
+fs_phase = 1 / chirp_rep_time
+
+# DERIVED VALUES
+c = 3e8 # speed of light in m/s
+target_distance = 0.4  # expected target (hedgehog) distance in meters
+target_rt_time = (target_distance*2)/c #time for one round trip
+
+bandwidth = freq_stop - freq_start
+
+# frequency change rate per sample
+freq_smpl_delta = (freq_stop - freq_start) / samples_per_chirp
+freq_change_speed = freq_smpl_delta * sample_rate
+freq_change_target  = freq_change_speed * target_rt_time  # change of frequency for one roundtrip
+
+Km = c / (2 * freq_change_speed * samples_per_chirp)
+km = c / (2 * bandwidth)
+# calculate more values from config
+frame_time = chirps_per_frame * chirp_rep_time  # length of one frame in s
+frame_length = chirps_per_frame * samples_per_chirp  # length of one frame = chirps_per_frame*samples_per_chirp, here: 480
+fft_step_size = 1 / frame_time   # step_size of FFT result, the bins are fft_step_size * n
+
+# expected distance bin
+expected_bin = int(target_distance / km)
+search_width = 5  # +/- bins around expected distance
+
+
+data = np.load(file, mmap_mode='r')  # shape: (frames, tx, rx, samples)
+# LOAD RADAR DATA
+frame_count = data.shape[0]
+results = np.zeros(frame_count)
+# process each frame
+for f in range(frame_count):
+    frame = data[f,0,0]   # get one frame: frame-nr, tx-ant, rx_ant
+    frame = frame.reshape(frame_length)  # convert to 1D-array
+# run FFT on frame
+fft_vals = np.fft.fft(frame) #fft along samples
+fft_mag = np.abs(fft_vals)
+
+# select wanted bin from fft
+bin_search = range(expected_bin - search_width, 
+                   expected_bin + search_width +1)
+target_bins = fft_vals[bin_search]  # shape: (2*search_width + 1,) 
+
+# calculate phi (phase angle) for selected bin from sin/cos (=real/imaginary) values
+
+# Find strongest bin in this window
+i_max = np.argmax(np.abs(target_bins))
+
+# Convert local index to absolute FFT index
+best_bin = bin_search.start + i_max
+
+# Phase of that bin
+phi = np.arctan2(np.imag(fft_vals[best_bin]),
+                 np.real(fft_vals[best_bin]))
+mag_bins = np.abs(target_bins)
+# Save scalar phase value
+results[f] = phi
+# save calculated values to file
+np.save(result, results)
+print(np.min(results), np.max(results))  
+
+phase_unwrapped = np.unwrap(results)
+
+# Physiological frequency bands for resting dog
+RESP_LOW, RESP_HIGH = 0.33, 0.67      # Hz
+HEART_LOW, HEART_HIGH = 1.17, 2.17    # Hz
+
+b_resp, a_resp = butter(4, [RESP_LOW/(0.5*fs_phase), RESP_HIGH/(0.5*fs_phase)], btype='band')
+b_heart, a_heart = butter(4, [HEART_LOW/(0.5*fs_phase), HEART_HIGH/(0.5*fs_phase)], btype='band') 
+
+resp_seg = filtfilt(b_resp, a_resp, segment)
+heart_seg = filtfilt(b_heart, a_heart, segment)
+
+stride = int(fs_phase)  # e.g., 1 second
+for f in range(window, frame_count, stride):
+    segment = phase_unwrapped[f-window:f]
+    # compute FFT & store
+# Butterworth bandpass filter
+
+def bandpass(data, low, high, fs, order=4):
+    nyq = 0.5 * fs
+    b, a = butter(order, [low/nyq, high/nyq], btype='band')
+    return filtfilt(b, a, data)
+
+
+
+# Filter for respiration
+resp_signal = bandpass(phase_unwrapped, RESP_LOW, RESP_HIGH, fs_phase)
+resp_fft = np.fft.rfft(resp_signal)
+resp_freqs = np.fft.rfftfreq(len(resp_signal), 1/fs_phase)
+resp_peak = resp_freqs[np.argmax(np.abs(resp_fft))]
+respiration_rate = resp_peak * 60   # convert Hz → breaths/min
+
+
+#  Filter for heart rate
+
+heart_signal = bandpass(phase_unwrapped, HEART_LOW, HEART_HIGH, fs_phase)
+heart_fft = np.fft.rfft(heart_signal)
+heart_freqs = np.fft.rfftfreq(len(heart_signal), 1/fs_phase)
+heart_peak = heart_freqs[np.argmax(np.abs(heart_fft))]
+heart_rate = heart_peak * 60        # convert Hz → bpm
+
+respiration_rate = np.zeros(frame_count)
+heart_rate = np.zeros(frame_count)
+
+window = int(10 * fs_phase)
+
+for f in range(window, frame_count):
+
+    segment = phase_unwrapped[f-window:f]
+
+    # Respiration
+    resp_seg = bandpass(segment, RESP_LOW, RESP_HIGH, fs_phase)
+    resp_fft = np.fft.rfft(resp_seg)
+    resp_freqs = np.fft.rfftfreq(len(resp_seg), 1/fs_phase)
+    respiration_rate[f] = resp_freqs[np.argmax(np.abs(resp_fft))] * 60
+
+    # Heart
+    heart_seg = bandpass(segment, HEART_LOW, HEART_HIGH, fs_phase)
+    heart_fft = np.fft.rfft(heart_seg)
+    heart_freqs = np.fft.rfftfreq(len(heart_seg), 1/fs_phase)
+    heart_rate[f] = heart_freqs[np.argmax(np.abs(heart_fft))] * 60
+    
+# Save results
+np.save(path + r"\respiration.npy", respiration_rate)
+np.save(path+ r"\heartrate.npy", heart_rate)
+
+
+print(f"Expected bin: {expected_bin}, km: {km:.4f} m/bin")
