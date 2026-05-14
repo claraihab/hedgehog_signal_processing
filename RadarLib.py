@@ -17,7 +17,7 @@ ANGLES_NAME     = "radar_angles.npy"
 
 SPEED_OF_LIGHT = 300e6  # 300.000 km/s = 300.000.000 m/s
 
-def importRadarData(dataPath : str) -> (dict, np.ndarray):
+def importRadarData(dataPath : str) -> (dict, np.ndarray, np.ndarray):
     '''
     import radar-data and configuration
     :param dataPath:
@@ -133,7 +133,7 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
     to avoid time-consuming recalculation at later processing steps
 
     :param dataPath:    where are the data?
-    :param FFTbin:      int|list of int     which bins of the FFT to get
+    :param distance:    float|list of float     distance between sensor and target/animal in m
     :param window:      optional, window or name of window-function for FFT of chirps
     :param frameMax:    optional, max number of frames to process
     '''
@@ -142,7 +142,7 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
 
     config, data, timestamp = importRadarData(dataPath)
     # create window-array by name
-    if window is not None:
+    if (window is not None) and (type(window) ==str):
         winSize = config['num_samples_per_chirp']
         window = get_window( window, winSize)
 
@@ -153,7 +153,7 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
 
     # prepare result-array
     if type(distance) == list:
-        binCnt = len(l)
+        binCnt = len(distance)
         FFTbin = []
         for d in distance:
             freq = calcFrequencyFromDistance(d)
