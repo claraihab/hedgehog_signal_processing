@@ -3,24 +3,64 @@ Second loop for filtering data
 Starts from the angles.npy 
 '''
 
+SPEED_OF_LIGHT = 3e8
+TARGET_DISTANCE = 0.4
+TARGET_RT_TIME = (TARGET_DISTANCE * 2) / SPEED_OF_LIGHT
+
+sys.path.append(r"C:\Users\Clara Guindy\Documents\GitHub\hedgehog_signal_processing")
 from PreProcessingRadarLib import *
-from FilteringLib import *
+
+
+ROOT_DIR = r"D:\igel\Radar-Test"
+HARDWARE_SUBFOLDER = "RadarIfxBGT60TR13C_00"
+MAX_FRAME = 20000 
 
 
 
 recording_folders = [f for f in os.listdir(ROOT_DIR) if f.startswith("recording_")]
 
 for rec_folder in recording_folders:
+    data_path = os.path.join(ROOT_DIR, rec_folder, HARDWARE_SUBFOLDER)
+    if not os.path.exists(os.path.join(data_path, "radar_angles.npy")):
+        continue
+
     configData, results = importRadarAngles(data_path)
+
+    print(results.shape)
     print(f"Successfully loaded config and {len(results)} precalculated frames.")
     
-    try:
+    
+    try: 
+        fs = 1 / (configData['frame_repetition_time_s']) #important
+        
+        freqStart       = configData['start_frequency_Hz']
+        freqStop        = configData['end_frequency_Hz']
+        smplPerChirp    = configData['num_samples_per_chirp']
+        smplRate        = configData['sample_rate_Hz']
+        chirpRepTime    = configData['chirp_repetition_time_s']
+        chirpPerFrame  = configData['num_chirps_per_frame']
+
+        # calculate more values from config
+        freqCenter = (freqStart + freqStop)/2  #where is this used?
+        wavelength = SPEED_OF_LIGHT / configData['start_frequency_Hz'] 
+        targetFreq = calcFrequencyFromDistance(configData, TARGET_DISTANCE)
+        
+        chirpTime       = smplPerChirp / smplRate   # length of one chirp in s
+        freqRange       = freqStop - freqStart
+        freqChgSpd      = freqRange / chirpTime     # change-rate of frequency in Hz/s
+        fftStepHz       = 1 / chirpTime             # step size of FFT result in Hz, the freq of bin[n] is fft_step_size * n
+        fftStepM        = (SPEED_OF_LIGHT / smplRate) * smplPerChirp
+
+        freqChgTarget = TARGET_RT_TIME * freqChgSpd
+        fftTargetBin  = freqChgTarget / fftStepHz
+        ffTargetBinIdx  = int(fftTargetBin)         # what FFT-bin has wanted data
+
         phase_unwrapped = np.unwrap(results)
         phi_detrended = detrend(phase_unwrapped)
 
         # SIGNAL FILTERING 
-        # Deep Hibernation Heart: 2-15 BPM (0.033 Hz - 0.25 Hz)
-        heart_signal_raw = apply_filter(phi_detrended, [0.033, 0.25], fs, btype='bandpass')
+        # Deep Hibernation Heart: 2-15 BPM 
+        heart_signal_raw = apply_filter(phi_detrended, [0.033, 0.33], fs, btype='bandpass')
         # Deep Hibernation Resp: Lowered ceiling to under 5 BrPM 
         resp_signal = apply_filter(phi_detrended, 0.083, fs, btype='low')
 
@@ -34,11 +74,12 @@ for rec_folder in recording_folders:
         window_samples, step_samples = int(fs * window_sec), int(fs * step_sec)
         window_samples_arou, step_samples_arou = int(fs * window_arou), int(fs *step_arou)
         n_fft = 32768
-        
+        # Calculate the midpoint sample, then convert to seconds
+        time_sec = ((start + window_samples / 2) / fs)
         hibernation_data = []
         arousal_data = []
 
-        
+    
         heart_signal_final = np.zeros_like(heart_signal_raw)
 
         # WINDOW PROCESSING LOOP
@@ -76,7 +117,7 @@ for rec_folder in recording_folders:
             
             # Arousal Analysis 
             ah_chunk = arousal_heart_raw[start : start + window_samples_arou] * np.blackman(window_samples_arou)
-            ah_yf = np.abs(fft(ah_chunk, n=n_fft_arou))
+            ah_yf = np.abs(fft(ah_chunk, n=n_fft))
             ah_mask = (h_xf >= 1.6) & (h_xf <= 6.0)
             arousal_bpm = h_xf[ah_mask][np.argmax(ah_yf[ah_mask])] * 60
 
@@ -90,8 +131,8 @@ for rec_folder in recording_folders:
 
             arousal_data.append({
                 "Time_Sec": time_sec, 
-                "Arousal_BPM": round(a_bpm, 2), 
-                "Arousal_BrPM": round(a_brpm, 2), 
+                "Arousal_BPM": round(arousal_bpm, 2), 
+                "Arousal_BrPM": round(arousal_brpm, 2), 
                 "Movement_Index": round(movement_intensity, 4)
             })
 
@@ -129,9 +170,9 @@ for rec_folder in recording_folders:
 
         # Plot 2: Arousal Profiles 
         fig_arousal, (ax_ah, ax_am) = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
-        v_time = [v['Time_Sec'] for v in combined_vitals]
-        v_a_bpm = [v['Arousal_BPM'] for v in combined_vitals]
-        v_move = [v['Movement_Index'] for v in combined_vitals]
+        v_time = [v['Time_Sec'] for v in arousal_data]
+        v_a_bpm = [v['Arousal_BPM'] for v in arousal_data]
+        v_move = [v['Movement_Index'] for v in arousal_data]
         
         ax_ah.plot(v_time, v_a_bpm, color='purple', marker='o', markersize=2, linestyle='-')
         ax_ah.set_title(f"Arousal Tracking - High Frequency Heart Spectrum (100-360 BPM)")
@@ -143,7 +184,7 @@ for rec_folder in recording_folders:
         plt.close(fig_arousal)
 
         # Save CSV Data
-        df_final = pd.DataFrame(combined_vitals)
+        df_final = pd.DataFrame(arousal_data)
         df_final.to_csv(os.path.join(data_path, f"vitals_{rec_folder}.csv"), index=False)
         print(f"Done! Saved Baseline Plot, Arousal Plot, and CSV for {rec_folder}")
 
