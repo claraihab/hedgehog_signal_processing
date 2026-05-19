@@ -3,6 +3,7 @@ Second library includes functions for the filters used on the preprocessed data
 '''
 
 import os
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -10,6 +11,10 @@ from scipy.signal import butter, filtfilt, detrend, iirnotch
 from scipy.fft import fft, fftfreq
 
 
+DATA_NAME       = "radar.npy"
+CONFIG_NAME     = "config.json"
+TIMESTAMP_NAME  = "radar_timestamp.csv"
+ANGLES_NAME     = "radar_angles.npy"
 
 def importRadarAngles(dataPath:str):
     '''
