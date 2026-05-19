@@ -30,7 +30,7 @@ def importRadarData(dataPath : str) -> (dict, np.ndarray):
     with open(configFile) as configJson:
         deviceConfig = json.load(configJson)['device_config'] ['fmcw_single_shape']
     # read radar data
-    data = np.load(dataFile)
+    data = np.load(dataFile, mmap_mode = "r")
     # read timestamps
     timestamp = np.loadtxt(timestampFile)
 

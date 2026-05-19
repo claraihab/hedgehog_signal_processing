@@ -23,7 +23,7 @@ def importRadarAngles(dataPath:str):
     with open(configFile) as configJson:
         deviceConfig = json.load(configJson)['device_config'] ['fmcw_single_shape']
     # read radar data
-    angles = np.load(anglesFile)
+    angles = np.load(anglesFile, mmap_mode = "r")
     return deviceConfig, angles
 
 
