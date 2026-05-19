@@ -6,7 +6,12 @@ First library including directories and functions for preprocessing of raw radar
 #packages needed 
 import numpy as np
 import json
-from scipy.signal import get_window
+import sys, os 
+from scipy.signal import get_window, butter, filtfilt, detrend, iirnotch
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.fft import fft, fftfreq, detrend
+
 
 # functions for processing of raw radar-data
 
@@ -17,7 +22,7 @@ ANGLES_NAME     = "radar_angles.npy"
 
 SPEED_OF_LIGHT = 300e6  # 300.000 km/s = 300.000.000 m/s
 
-def importRadarData(dataPath : str) -> (dict, np.ndarray):
+def importRadarData(dataPath : str) -> tuple : 
     '''
     import radar-data and configuration
     :param dataPath:
@@ -114,8 +119,8 @@ def calcFrequencyFromDistance(radarconfig:dict, distance:float) -> float:
 
 def calcFFTbinFromFrequency(radarconfig:dict, frequency:float) -> int:
     chirpRepTime = radarconfig['chirp_repetition_time_s']
-    chirpPerFramne = radarconfig['num_chirps_per_frame']
-    frameTime   = chirpRepTime * chirpPerFramne     # length of one frame in s
+    chirpPerFrame = radarconfig['num_chirps_per_frame']
+    frameTime   = chirpRepTime * chirpPerFrame     # length of one frame in s
     fftStepSize = 1/ frameTime                      # freq-diff between 2 FFT-bins
     fftBin      = frequency / fftStepSize
     return int(fftBin)
@@ -153,7 +158,7 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
 
     # prepare result-array
     if type(distance) == list:
-        binCnt = len(l)
+        binCnt = len(l) #l is not defined check it..
         FFTbin = []
         for d in distance:
             freq = calcFrequencyFromDistance(d)
@@ -189,3 +194,87 @@ def saveRadarAngles( radarAngles:np.ndarray, dataPath:str):
 
 
 
+
+'''
+Second library includes functions for the filters used on the preprocessed data
+'''
+
+
+def importRadarAngles(dataPath:str):
+    '''
+    import preprocessed radar-data and radar-configuration from datapath
+    :param dataPath:    where to find files
+    :return:            deviceConfig, preprocessed radar-data
+    '''
+    configFile  = dataPath + "\\" + CONFIG_NAME
+    anglesFile  = dataPath + "\\" + ANGLES_NAME
+    # read JSON-File with configuration
+    with open(configFile) as configJson:
+        deviceConfig = json.load(configJson)['device_config'] ['fmcw_single_shape']
+    # read radar data
+    angles = np.load(anglesFile, mmap_mode = "r")
+    return deviceConfig, angles
+
+
+def calculate_peak_rate(signal, start_idx, win_samples, fs, f_min, f_max, n_fft=32768):
+    """Slices a signal chunk, applies a Blackman window, and finds the peak frequency in BPM."""
+    chunk = signal[start_idx : start_idx + win_samples]
+    windowed = chunk * np.blackman(win_samples)
+    
+    yf = np.abs(fft(windowed, n=n_fft))
+    xf = fftfreq(n_fft, 1/fs)
+    mask = (xf >= f_min) & (xf <= f_max)
+    
+    rate = xf[mask][np.argmax(yf[mask])] * 60
+    return rate, xf, yf, mask
+
+
+def save_diagnostic_plot(r_xf, r_yf, r_mask, h_xf, h_yf, h_mask, root_dir):
+    """Generates and saves the one-time diagnostic spectrum profile."""
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+    
+    ax1.plot(r_xf[r_mask] * 60, r_yf[r_mask], color='blue')
+    ax1.set_title("Respiration Spectrum (Magnitude vs. Frequency)")
+    ax1.set_xlabel("Breaths Per Minute (BrPM)")
+    
+    ax2.plot(h_xf[h_mask] * 60, h_yf[h_mask], color='red')
+    ax2.set_title("Heart Spectrum (Magnitude vs. Frequency)")
+    ax2.set_xlabel("Beats Per Minute (BPM)")
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(root_dir, "diagnostic_fft_window.png"), dpi=150)
+    plt.close(fig)
+    print(">>> Saved diagnostic spectrum profile to ROOT_DIR.")
+
+
+from scipy.signal import butter, lfilter, iirnotch, detrend
+
+
+def apply_filter(data, cutoff, fs, btype='bandpass', order=4):
+    nyq = 0.5 * fs
+    if btype == 'bandpass':
+        low, high = cutoff[0] / nyq, cutoff[1] / nyq
+        b, a = butter(order, [low, high], btype=btype)
+    else:
+        normal_cutoff = cutoff / nyq
+        b, a = butter(order, normal_cutoff, btype=btype)
+    return filtfilt(b, a, data)
+
+
+
+
+
+def apply_notch_filter(data, target_freq, fs, quality_factor=30.0):
+    """
+    Removes a specific frequency from the signal.
+    :param target_freq: The frequency to remove (e.g., 0.33 Hz for 20 BPM)
+    :param fs: Sampling frequency (your 227 Hz)
+    :param quality_factor: How narrow the notch is (higher = narrower)
+    """
+    # Design the notch filter
+    b_notch, a_notch = iirnotch(target_freq, quality_factor, fs)
+    
+    # Apply it to the signal
+    filtered_data = filtfilt(b_notch, a_notch, data)
+    
+    return filtered_data
