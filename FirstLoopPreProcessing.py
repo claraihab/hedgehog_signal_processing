@@ -3,7 +3,7 @@ Loop for radar signal processing - Hibernating Hedgehog Edition
 RadarIfxBGT60TR13C_00
 Includes automated diagnostic plotting, hibernation, and arousal tracking.
 '''
-
+import sys
 sys.path.append(r"C:\Users\Clara Guindy\Documents\GitHub\hedgehog_signal_processing")
 from PreProcessingRadarLib import *
 
