@@ -7,14 +7,13 @@ SPEED_OF_LIGHT = 3e8
 TARGET_DISTANCE = 0.4
 TARGET_RT_TIME = (TARGET_DISTANCE * 2) / SPEED_OF_LIGHT
 
+import sys
 sys.path.append(r"C:\Users\Clara Guindy\Documents\GitHub\hedgehog_signal_processing")
 from PreProcessingRadarLib import *
 
 
 ROOT_DIR = r"D:\igel\Radar-Test"
 HARDWARE_SUBFOLDER = "RadarIfxBGT60TR13C_00"
-MAX_FRAME = 20000 
-
 
 
 recording_folders = [f for f in os.listdir(ROOT_DIR) if f.startswith("recording_")]
@@ -32,29 +31,6 @@ for rec_folder in recording_folders:
     
     try: 
         fs = 1 / (configData['frame_repetition_time_s']) #important
-        
-        freqStart       = configData['start_frequency_Hz']
-        freqStop        = configData['end_frequency_Hz']
-        smplPerChirp    = configData['num_samples_per_chirp']
-        smplRate        = configData['sample_rate_Hz']
-        chirpRepTime    = configData['chirp_repetition_time_s']
-        chirpPerFrame  = configData['num_chirps_per_frame']
-
-        # calculate more values from config
-        freqCenter = (freqStart + freqStop)/2  #where is this used?
-        wavelength = SPEED_OF_LIGHT / configData['start_frequency_Hz'] 
-        targetFreq = calcFrequencyFromDistance(configData, TARGET_DISTANCE)
-        
-        chirpTime       = smplPerChirp / smplRate   # length of one chirp in s
-        freqRange       = freqStop - freqStart
-        freqChgSpd      = freqRange / chirpTime     # change-rate of frequency in Hz/s
-        fftStepHz       = 1 / chirpTime             # step size of FFT result in Hz, the freq of bin[n] is fft_step_size * n
-        fftStepM        = (SPEED_OF_LIGHT / smplRate) * smplPerChirp
-
-        freqChgTarget = TARGET_RT_TIME * freqChgSpd
-        fftTargetBin  = freqChgTarget / fftStepHz
-        ffTargetBinIdx  = int(fftTargetBin)         # what FFT-bin has wanted data
-
         phase_unwrapped = np.unwrap(results)
         phi_detrended = detrend(phase_unwrapped)
 
@@ -74,18 +50,20 @@ for rec_folder in recording_folders:
         window_samples, step_samples = int(fs * window_sec), int(fs * step_sec)
         window_samples_arou, step_samples_arou = int(fs * window_arou), int(fs *step_arou)
         n_fft = 32768
+
         # Calculate the midpoint sample, then convert to seconds
-        time_sec = ((start + window_samples / 2) / fs)
+        
+        
         hibernation_data = []
         arousal_data = []
-
-    
         heart_signal_final = np.zeros_like(heart_signal_raw)
 
         # WINDOW PROCESSING LOOP
 
         for start in range(0, len(heart_signal_raw) - window_samples, step_samples):
             
+            time_sec = (start + (window_samples / 2)) / fs #calculate midpoint sample
+
             # Respiration Frequency Calculation
             r_chunk = resp_signal[start : start + window_samples] * np.blackman(window_samples)
             r_yf = np.abs(fft(r_chunk, n=n_fft))
@@ -115,6 +93,8 @@ for rec_folder in recording_folders:
 
         for start in range(0, len(heart_signal_raw) - window_samples_arou, step_samples_arou):
             
+            time_sec = (start + (window_samples_arou / 2)) / fs #calculate midpoint sample
+
             # Arousal Analysis 
             ah_chunk = arousal_heart_raw[start : start + window_samples_arou] * np.blackman(window_samples_arou)
             ah_yf = np.abs(fft(ah_chunk, n=n_fft))

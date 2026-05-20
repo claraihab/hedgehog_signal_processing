@@ -6,7 +6,7 @@ First library including directories and functions for preprocessing of raw radar
 #packages needed 
 import numpy as np
 import json
-import sys, os 
+import os 
 from scipy.signal import get_window, butter, filtfilt, detrend, iirnotch
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -158,7 +158,7 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
 
     # prepare result-array
     if type(distance) == list:
-        binCnt = len(l) #l is not defined check it..
+        binCnt = len(distance) 
         FFTbin = []
         for d in distance:
             freq = calcFrequencyFromDistance(d)

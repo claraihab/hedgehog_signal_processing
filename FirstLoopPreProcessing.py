@@ -4,6 +4,7 @@ RadarIfxBGT60TR13C_00
 Includes automated diagnostic plotting, hibernation, and arousal tracking.
 '''
 
+import sys
 sys.path.append(r"C:\Users\Clara Guindy\Documents\GitHub\hedgehog_signal_processing")
 from PreProcessingRadarLib import *
 
@@ -12,7 +13,7 @@ from PreProcessingRadarLib import *
 
 ROOT_DIR = r"D:\igel\Radar-Test"
 HARDWARE_SUBFOLDER = "RadarIfxBGT60TR13C_00"
-MAX_FRAME = 000 
+MAX_FRAME = 20000 
 
 # calculate roundtrip time in s for radar 
 SPEED_OF_LIGHT = 3e8  # 300.000.000 m/s
@@ -93,3 +94,6 @@ print(f"Total number of recordings that passed the threshold: {valid_recordings_
 #45 changes
 
 #this works
+
+#process both
+#
