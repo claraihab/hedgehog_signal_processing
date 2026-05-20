@@ -3,9 +3,6 @@ Second loop for filtering data
 Starts from the angles.npy 
 '''
 
-SPEED_OF_LIGHT = 3e8
-TARGET_DISTANCE = 0.4
-TARGET_RT_TIME = (TARGET_DISTANCE * 2) / SPEED_OF_LIGHT
 
 sys.path.append(r"C:\Users\Clara Guindy\Documents\GitHub\hedgehog_signal_processing")
 from PreProcessingRadarLib import *
@@ -15,9 +12,17 @@ ROOT_DIR = r"D:\igel\Radar-Test"
 HARDWARE_SUBFOLDER = "RadarIfxBGT60TR13C_00"
 MAX_FRAME = 20000 
 
+# all in beats-per-minute
+HEART_RATE_HIBERNATION_MIN  =   5   # beats per minute
+HEART_RATE_HIBERNATION_MAX  = 20
+BREATH_RATE_HIBERNATION_MAX     = 5
 
+HEART_RATE_NORMAL_MIN       = 100
+HEART_RATE_NORMAL_MAX       = 360
+BREATH_RATE_NORMAL_MAX       = 50
 
 recording_folders = [f for f in os.listdir(ROOT_DIR) if f.startswith("recording_")]
+
 
 for rec_folder in recording_folders:
     data_path = os.path.join(ROOT_DIR, rec_folder, HARDWARE_SUBFOLDER)
@@ -32,97 +37,97 @@ for rec_folder in recording_folders:
     
     try: 
         fs = 1 / (configData['frame_repetition_time_s']) #important
-        
-        freqStart       = configData['start_frequency_Hz']
-        freqStop        = configData['end_frequency_Hz']
-        smplPerChirp    = configData['num_samples_per_chirp']
-        smplRate        = configData['sample_rate_Hz']
-        chirpRepTime    = configData['chirp_repetition_time_s']
-        chirpPerFrame  = configData['num_chirps_per_frame']
 
-        # calculate more values from config
-        freqCenter = (freqStart + freqStop)/2  #where is this used?
-        wavelength = SPEED_OF_LIGHT / configData['start_frequency_Hz'] 
-        targetFreq = calcFrequencyFromDistance(configData, TARGET_DISTANCE)
-        
-        chirpTime       = smplPerChirp / smplRate   # length of one chirp in s
-        freqRange       = freqStop - freqStart
-        freqChgSpd      = freqRange / chirpTime     # change-rate of frequency in Hz/s
-        fftStepHz       = 1 / chirpTime             # step size of FFT result in Hz, the freq of bin[n] is fft_step_size * n
-        fftStepM        = (SPEED_OF_LIGHT / smplRate) * smplPerChirp
+        smplPerMinute = fs * 60 # convert from Hz to samples-per-minute
 
-        freqChgTarget = TARGET_RT_TIME * freqChgSpd
-        fftTargetBin  = freqChgTarget / fftStepHz
-        ffTargetBinIdx  = int(fftTargetBin)         # what FFT-bin has wanted data
 
         phase_unwrapped = np.unwrap(results)
         phi_detrended = detrend(phase_unwrapped)
 
         # SIGNAL FILTERING 
         # Deep Hibernation Heart: 2-15 BPM 
-        heart_signal_raw = apply_filter(phi_detrended, [0.033, 0.33], fs, btype='bandpass')
+        heart_signal_raw = apply_filter(phi_detrended, [HEART_RATE_HIBERNATION_MIN, HEART_RATE_HIBERNATION_MAX], smplPerMinute, btype='bandpass')
         # Deep Hibernation Resp: Lowered ceiling to under 5 BrPM 
-        resp_signal = apply_filter(phi_detrended, 0.083, fs, btype='low')
+        resp_signal = apply_filter(phi_detrended, BREATH_RATE_HIBERNATION_MAX, smplPerMinute, btype='low')
 
         # Arousal Ranges 
-        arousal_heart_raw = apply_filter(phi_detrended, [1.6, 6.0], fs, btype='bandpass') # 100-360 BPM
-        arousal_resp_raw = apply_filter(phi_detrended, 0.83 , fs, btype='lowpass')  # until 50 BrPM
+        arousal_heart_raw = apply_filter(phi_detrended, [HEART_RATE_NORMAL_MIN, HEART_RATE_NORMAL_MAX], smplPerMinute, btype='bandpass') # 100-360 BPM
+        arousal_resp_raw = apply_filter(phi_detrended, BREATH_RATE_NORMAL_MAX , smplPerMinute, btype='lowpass')  # until 50 BrPM
 
         # Sliding Window Settings
         window_sec, step_sec = 180, 5
         window_arou, step_arou = 60, 2
         window_samples, step_samples = int(fs * window_sec), int(fs * step_sec)
         window_samples_arou, step_samples_arou = int(fs * window_arou), int(fs *step_arou)
-        n_fft = 32768
-        # Calculate the midpoint sample, then convert to seconds
-        time_sec = ((start + window_samples / 2) / fs)
+
+        fft_window = np.blackman(window_samples)
+
         hibernation_data = []
         arousal_data = []
 
     
         heart_signal_final = np.zeros_like(heart_signal_raw)
 
-        # WINDOW PROCESSING LOOP
+        # WINDOW PROCESSING LOOP for hibernation
+        fft_window = np.blackman(window_samples)
 
         for start in range(0, len(heart_signal_raw) - window_samples, step_samples):
-            
-            # Respiration Frequency Calculation
-            r_chunk = resp_signal[start : start + window_samples] * np.blackman(window_samples)
-            r_yf = np.abs(fft(r_chunk, n=n_fft))
-            r_xf = fftfreq(n_fft, 1/fs)
-            # Mask updated for stricter breathing parameters (0.5 to 5 BrPM)
-            r_mask = (r_xf >= 0.0083) & (r_xf <= 0.083)
-            brpm = r_xf[r_mask][np.argmax(r_yf[r_mask])] * 60
+            # Calculate the midpoint sample of current window, then convert to seconds from start of file
+            time_sec = (start + (window_samples / 2) ) / fs
+            time_min = (start + (window_samples / 2) ) / smplPerMinute
 
-            # Dynamic Notch for Deep Hibernation 
-            harmonic_hz = (brpm * 2) / 60
+            brpm, r_fft_freq, r_fft, r_mask =  calculate_peak_rate(resp_signal[start : start + window_samples],
+                                smplPerMinute=smplPerMinute, beats_min=0.5, beats_max=BREATH_RATE_HIBERNATION_MAX, window=fft_window)
+
+            """
+            "# Respiration Frequency Calculation
+            r_chunk = resp_signal[start : start + window_samples] * fft_window
+            r_fft = np.abs(fft(r_chunk))
+            r_fft_freq= fftfreq(len(r_chunk), 1/smplPerMinute)
+            # Mask updated for stricter breathing parameters (0.5 to 5 BrPM)
+            r_mask = (r_fft_freq >= 0.5) & (r_fft_freq <= BREATH_RATE_HIBERNATION_MAX)
+            brpm = r_fft_freq[r_mask][np.argmax(r_fft[r_mask])]
+            """
+
+            # Dynamic Notch for Deep Hibernation
+            harmonic_bpm = (brpm * 2)
             h_chunk_raw = heart_signal_raw[start : start + window_samples]
-            h_chunk_clean = apply_notch_filter(h_chunk_raw, harmonic_hz, fs)
+            h_chunk_clean = apply_notch_filter(h_chunk_raw, harmonic_bpm, smplPerMinute)
             heart_signal_final[start : start + window_samples] = h_chunk_clean
 
-            # Hibernation Heart BPM Calculation
-            h_chunk_windowed = h_chunk_clean * np.blackman(window_samples)
-            h_yf = np.abs(fft(h_chunk_windowed, n=n_fft))
-            h_xf = fftfreq(n_fft, 1/fs)
-            h_mask = (h_xf >= 0.033) & (h_xf <= 0.3)
-            bpm = h_xf[h_mask][np.argmax(h_yf[h_mask])] * 60
+            hrpm, h_fft_freq, h_fft, h_mask =  calculate_peak_rate(h_chunk_clean,
+                                smplPerMinute=smplPerMinute, beats_min=HEART_RATE_HIBERNATION_MIN, beats_max=HEART_RATE_HIBERNATION_MAX, window=fft_window)
 
+            """
+            # Hibernation Heart BPM Calculation
+            h_chunk_windowed = h_chunk_clean * fft_window
+            h_fft = np.abs(fft(h_chunk_windowed))
+            h_fft_freq = fftfreq(len(h_chunk_windowed), 1/smplPerMinute)
+            h_mask = (h_fft_freq >= HEART_RATE_HIBERNATION_MIN) & (h_fft_freq <= HEART_RATE_HIBERNATION_MAX)
+            hrpm = h_fft_freq[h_mask][np.argmax(h_fft[h_mask])]
+            """
+            
             hibernation_data.append({
-                "Time_Sec": round((start + window_samples/2)/fs, 2),
+                "Time_Sec": round(time_sec, 2),
                 "Hibernation_BPM": round(bpm, 2),
                 "Hibernation_BrPM": round(brpm, 2),
             })
 
+
+        # WINDOW PROCESSING LOOP for arousel
+
+        fft_window_arou = np.blackman(window_samples_arou)
+
         for start in range(0, len(heart_signal_raw) - window_samples_arou, step_samples_arou):
             
             # Arousal Analysis 
-            ah_chunk = arousal_heart_raw[start : start + window_samples_arou] * np.blackman(window_samples_arou)
-            ah_yf = np.abs(fft(ah_chunk, n=n_fft))
+            ah_chunk = arousal_heart_raw[start : start + window_samples_arou] * fft_window_arou
+            ah_yf = np.abs(fft(ah_chunk))
             ah_mask = (h_xf >= 1.6) & (h_xf <= 6.0)
             arousal_bpm = h_xf[ah_mask][np.argmax(ah_yf[ah_mask])] * 60
 
-            ar_chunk = arousal_resp_raw[start : start + window_samples] * np.blackman(window_samples_arou)
-            ar_yf = np.abs(fft(ar_chunk, n=n_fft))
+            ar_chunk = arousal_resp_raw[start : start + window_samples] * fft_window_arou
+            ar_yf = np.abs(fft(ar_chunk))
             ar_mask = (r_xf >= 0.5) & (r_xf <= 2.0)
             arousal_brpm = r_xf[ar_mask][np.argmax(ar_yf[ar_mask])] * 60
 

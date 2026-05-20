@@ -216,20 +216,31 @@ def importRadarAngles(dataPath:str):
     return deviceConfig, angles
 
 
-def calculate_peak_rate(signal, start_idx, win_samples, fs, f_min, f_max, n_fft=32768):
-    """Slices a signal chunk, applies a Blackman window, and finds the peak frequency in BPM."""
-    chunk = signal[start_idx : start_idx + win_samples]
-    windowed = chunk * np.blackman(win_samples)
+def calculate_peak_rate(signal:np.ndarray,
+                        smplPerMinute:float, beats_min:float, beats_max:float, window:np.ndarray=None):
+    '''
+    calculate the rate of the peak in the FFT of a window in the data
+    :param signal:          # preprocessed radar data
+    :param smplPerMinute:   # samples per minute, neede to calculate in beats-per-minute
+    :param beatsMin:        # minimum rate
+    :param beats_max:       # maximum rate
+    :param window:          # optional window for FFT calculation
+    :return:    rate, fftFreq, fftResult, mask
+    '''
+    if window is not None:
+        windowed = signal * window
+        fft_result = np.abs(fft(windowed))
+    else:
+        fft_result = np.abs(fft(signal))
+    fft_freq = fftfreq(len(signal), 1/smplPerMinute)
+    mask = (fft_freq >= beats_min) & (fft_freq <= beats_max)
     
-    yf = np.abs(fft(windowed, n=n_fft))
-    xf = fftfreq(n_fft, 1/fs)
-    mask = (xf >= f_min) & (xf <= f_max)
-    
-    rate = xf[mask][np.argmax(yf[mask])] * 60
-    return rate, xf, yf, mask
+    rate = fft_freq[mask][np.argmax(fft_result[mask])]
+    return rate, fft_freq, fft_result, mask
 
 
-def save_diagnostic_plot(r_xf, r_yf, r_mask, h_xf, h_yf, h_mask, root_dir):
+def save_diagnostic_plot(fft_result_breath, fft_freq_breath, breath_mask,
+                         h_xf, h_yf, h_mask, root_dir):
     """Generates and saves the one-time diagnostic spectrum profile."""
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
     
