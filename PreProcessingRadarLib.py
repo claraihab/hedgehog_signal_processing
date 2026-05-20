@@ -6,12 +6,9 @@ First library including directories and functions for preprocessing of raw radar
 #packages needed 
 import numpy as np
 import json
-import sys, os 
-from scipy.signal import get_window, butter, filtfilt, detrend, iirnotch
-import pandas as pd
+from scipy.signal import get_window, butter, filtfilt, detrend, iirnotch, lfilter
 import matplotlib.pyplot as plt
-from scipy.fft import fft, fftfreq, detrend
-
+from scipy.fft import fft, fftfreq
 
 # functions for processing of raw radar-data
 
@@ -118,11 +115,12 @@ def calcFrequencyFromDistance(radarconfig:dict, distance:float) -> float:
     return freq
 
 def calcFFTbinFromFrequency(radarconfig:dict, frequency:float) -> int:
-    chirpRepTime = radarconfig['chirp_repetition_time_s']
-    chirpPerFrame = radarconfig['num_chirps_per_frame']
-    frameTime   = chirpRepTime * chirpPerFrame     # length of one frame in s
-    fftStepSize = 1/ frameTime                      # freq-diff between 2 FFT-bins
-    fftBin      = frequency / fftStepSize
+    smplPerChirp = radarconfig['num_samples_per_chirp']
+    smplRate = radarconfig['sample_rate_Hz']
+    chirpTime = smplPerChirp / smplRate  # length of one chirp in s
+    fftStepHz = 1 / chirpTime           # freq-diff between 2 FFT-bins
+
+    fftBin      = frequency / fftStepHz
     return int(fftBin)
 
 def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndarray|str=None, frameMax:int=None) -> np.ndarray:
@@ -161,13 +159,13 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
         binCnt = len(l) #l is not defined check it..
         FFTbin = []
         for d in distance:
-            freq = calcFrequencyFromDistance(d)
-            bin =  calcFFTbinFromFrequency(freq)
+            freq = calcFrequencyFromDistance(config, d)
+            bin =  calcFFTbinFromFrequency(config, freq)
             FFTbin.append(bin)
     else:
         binCnt  = 1
-        freq = calcFrequencyFromDistance(distance)
-        FFTbin  = calcFFTbinFromFrequency(freq)
+        freq = calcFrequencyFromDistance(config, distance)
+        FFTbin  = calcFFTbinFromFrequency(config, freq)
         
     results = np.zeros([frameCount,binCnt+1], dtype=float)
 
@@ -183,7 +181,8 @@ def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndar
             # select the bin for distance
             phi = np.angle( frameFFT[FFTbin] )
             # save calculated phi in result-array
-            results[frameNum] = [timestamp, phi]
+            tmp = np.array([timestamp[frameNum], phi])
+            results[frameNum] = tmp
 
     return results
 
@@ -240,25 +239,39 @@ def calculate_peak_rate(signal:np.ndarray,
 
 
 def save_diagnostic_plot(fft_result_breath, fft_freq_breath, breath_mask,
-                         h_xf, h_yf, h_mask, root_dir):
-    """Generates and saves the one-time diagnostic spectrum profile."""
+                         fft_result_heart, fft_freq_heart, heart_mask,
+                         file_name):
+    '''
+    create a plot of fft-result for heart-rate and breath-rate and save as PNG
+    :param fft_result_breath:
+    :param fft_freq_breath:
+    :param breath_mask:
+    :param fft_result_heart:
+    :param fft_freq_heart:
+    :param heart_mask:
+    :param file_name:
+    :return:    None
+    '''
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
-    
-    ax1.plot(r_xf[r_mask] * 60, r_yf[r_mask], color='blue')
+
+    x_axis = fft_freq_breath[breath_mask]
+    y_axis = fft_result_breath[breath_mask]
+    ax1.plot(x_axis , y_axis, color='blue')
     ax1.set_title("Respiration Spectrum (Magnitude vs. Frequency)")
     ax1.set_xlabel("Breaths Per Minute (BrPM)")
     
-    ax2.plot(h_xf[h_mask] * 60, h_yf[h_mask], color='red')
+    x_axis = fft_freq_heart[heart_mask]
+    y_axis = fft_result_heart[heart_mask]
+    ax2.plot(x_axis, y_axis, color='red')
     ax2.set_title("Heart Spectrum (Magnitude vs. Frequency)")
     ax2.set_xlabel("Beats Per Minute (BPM)")
     
     plt.tight_layout()
-    plt.savefig(os.path.join(root_dir, "diagnostic_fft_window.png"), dpi=150)
+    plt.savefig(file_name, dpi=150)
     plt.close(fig)
-    print(">>> Saved diagnostic spectrum profile to ROOT_DIR.")
+    print(">>> Saved diagnostic spectrum profile to :",file_name)
 
 
-from scipy.signal import butter, lfilter, iirnotch, detrend
 
 
 def apply_filter(data, cutoff, fs, btype='bandpass', order=4):
