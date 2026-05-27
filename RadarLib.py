@@ -112,13 +112,27 @@ def calcFrequencyFromDistance(radarconfig:dict, distance:float) -> float:
     freq   = freqChgSpeed * rtTime          # change of frequency in one round trip
     return freq
 
+def calcDistanceFromFrequency(radarconfig:dict, frequency:float) -> float:
+    freqStart   = radarconfig['start_frequency_Hz']
+    freqStop    = radarconfig['end_frequency_Hz']
+    smplPerChirp= radarconfig['num_samples_per_chirp']
+    smplRate    = radarconfig['sample_rate_Hz']
+    chirpTime   = smplPerChirp / smplRate       # length of one chirp in s
+    freqChgSpeed= (freqStop-freqStart) / chirpTime  # change of frequency in Hz/s
+    rtTime = frequency / freqChgSpeed       # how long neede the signal
+    distance = (rtTime /2) * SPEED_OF_LIGHT
+    return distance
+
 def calcFFTbinFromFrequency(radarconfig:dict, frequency:float) -> int:
-    chirpRepTime = radarconfig['chirp_repetition_time_s']
-    chirpPerFramne = radarconfig['num_chirps_per_frame']
-    frameTime   = chirpRepTime * chirpPerFramne     # length of one frame in s
-    fftStepSize = 1/ frameTime                      # freq-diff between 2 FFT-bins
-    fftBin      = frequency / fftStepSize
+    smplPerChirp = radarconfig['num_samples_per_chirp']
+    smplRate = radarconfig['sample_rate_Hz']
+    chirpTime = smplPerChirp / smplRate  # length of one chirp in s
+    fftStepHz = 1 / chirpTime  # freq-diff between 2 FFT-bins
+    
+    fftBin = frequency / fftStepHz
     return int(fftBin)
+
+
 
 def preProcessRadarData(dataPath:str, distance:float|list[float], window:np.ndarray|str=None, frameMax:int=None) -> np.ndarray:
     '''
@@ -204,4 +218,33 @@ def importRadarAngels(dataPath:str):
     return deviceConfig, angels
 
 
-
+def calcDisplacement(phaseData:np.ndarray, radarconfig:dict) -> np.ndarray:
+    '''
+    calculate the distance from the phase shift between consecutive frames
+    
+    the calculated distance is relative to the distance from the selected FFT-bin
+    
+    :param phaseData:       Numpy-Array with phase data
+    :param radarconfig:     radarconfiguration
+    :return:    Numpy-Array with the relative distances (one value less than the phase data)
+    '''
+    # calculate some values from the radarconfig
+    frameRepTime = radarconfig["frame_repetition_time_s"]
+    frameRate    = 1/frameRepTime
+    freqStart   = radarconfig['start_frequency_Hz']
+    freqStop    = radarconfig['end_frequency_Hz']
+    smplPerChirp= radarconfig['num_samples_per_chirp']
+    smplRate    = radarconfig['sample_rate_Hz']
+    chirpTime   = smplPerChirp / smplRate       # length of one chirp in s
+    freqChgSpeed= (freqStop-freqStart) / chirpTime  # change of frequency in Hz/s
+    # calculate the phase-change
+    phaseDelta = phaseData[:-1].copy - phaseData[1:]
+    # from phase change calculate the freq difference (to the used FFT-bin=)
+    freqDelta = (phaseDelta / (2 *np.pi)) * frameRate
+    # then calculate the RT-time difference form freq difference
+    timeDelta = freqDelta / freqChgSpeed
+    # and convert to distance in m
+    distance  = (timeDelta /2) /SPEED_OF_LIGHT
+    return distance
+    
+    
