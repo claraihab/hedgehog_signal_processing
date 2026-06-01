@@ -30,6 +30,7 @@ for rec_folder in recording_folders:
     data_path = os.path.join(ROOT_DIR, rec_folder, HARDWARE_SUBFOLDER)
     if not os.path.exists(os.path.join(data_path, "radar.npy")):
         continue
+    
 
     print(f"\n>>> Processing: {rec_folder}")
     
