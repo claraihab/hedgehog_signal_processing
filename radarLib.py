@@ -255,7 +255,7 @@ def calcDisplacement(radarConfig:radarConfigData, phaseData:np.ndarray) -> np.nd
     # then calculate the RT-time difference form freq difference
     timeDelta = freqDelta / radarConfig.freq_change_speed
     # and convert to distance in m
-    distance  = (timeDelta /2) /SPEED_OF_LIGHT
+    distance  = (timeDelta /2) *SPEED_OF_LIGHT
     return distance
     
 def findBaseFreq(FFT_data:np.ndarray, timebase:float, weighted:bool=True) ->float:
