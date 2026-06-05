@@ -5,7 +5,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from RadarLib import *
+from radarLib import *
 
 DATA_PATH = "D:\\Projekte\\Igel-Box\\Radar\\mit_hund\\RadarIfxBGT60TR13C_00"
 

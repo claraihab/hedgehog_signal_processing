@@ -5,7 +5,7 @@
 import os
 import datetime
 
-from RadarLib import *
+from radarLib import *
 
 ROOT_DIR = r"D:\igel\Radar-Test"
 HARDWARE_SUBFOLDER_1 = "RadarIfxBGT60TR13C_00"      # first sensor
