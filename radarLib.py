@@ -3,10 +3,15 @@
 
 '''
 
-from dataclasses import make_dataclass, dataclass
+from dataclasses import dataclass
 import json
+import os
+
 import numpy as np
-from scipy.signal import get_window
+import scipy as sp
+import scipy.signal as signal
+from scipy.signal import get_window, detrend
+
 
 # fixed names for the radar data files
 DATA_NAME       = "radar.npy"
@@ -15,6 +20,9 @@ TIMESTAMP_NAME  = "radar_timestamp.csv"
 ANGLES_NAME     = "radar_angles.npy"
 
 SPEED_OF_LIGHT = 300e6  # 300.000 km/s = 300.000.000 m/s
+
+
+radarLib_verbose    = False     # if set to True PreProcessRadarData will print some infos
 
 @dataclass
 class radarConfigData:
@@ -32,11 +40,24 @@ class radarConfigData:
     freq_change_speed       : float # how fast changes the frequency in a chirp = (end-start)/time
     frame_repetition_time_s : float
     frame_rate_Hz           : float # simply 1/frame_repetition_time_s
+    #
+    num_chirps_per_frame    : int
+    chirp_repetition_time_s : float
+    aaf_cutoff_Hz           : int
+    hp_cutoff_Hz            : int
+    if_gain_dB              : int
+    mimo_mode               : str
+    rx_antennas             : list
+    tx_antennas             : list
+    tx_power_level          : int
 
 
 def importRadarConfig(dataPath : str) -> radarConfigData:
+    if radarLib_verbose:
+        print("importRadarConfig("+dataPath+")")
+    config_filename = os.path.join(dataPath, CONFIG_NAME)
     # read JSON-File with configuration info dictionary
-    with open(dataPath + "\\" + CONFIG_NAME) as configJson:
+    with open(config_filename) as configJson:
         configData = json.load(configJson)['device_config'] ['fmcw_single_shape']
     
     # calculate derivative values often used
@@ -52,10 +73,10 @@ def importRadarConfig(dataPath : str) -> radarConfigData:
     fftStepHz       = 1 / chirpTime
 
     # extend dictionary with derivative values
-    configData['frameRate']     = frameRate
-    configData['chirpTime']     = chirpTime
-    configData['freqChgSpeed']  = freqChgSpeed
-    configData['fftStepHz']     = fftStepHz
+    configData['frame_rate_Hz']     = frameRate
+    configData['chirp_time_s']      = chirpTime
+    configData['freq_change_speed'] = freqChgSpeed
+    configData['fft_step_Hz']       = fftStepHz
     
     # convert dictionary to dataclass and return
     return radarConfigData(**configData)
@@ -75,11 +96,15 @@ def importRadarData(dataPath : str) -> (dict, np.ndarray, np.ndarray):
     # read JSON-File with configuration and convert to dataclass
     radarConfig = importRadarConfig(dataPath)
     # read radar data
-    data = np.load(dataFile)
+    radarData = np.load(dataFile)
     # read timestamps
-    timestamps = np.loadtxt(timestampFile)
+    try:
+        timestamps = np.loadtxt(timestampFile)
+    except:
+        # create dummy timestamps if there are no real timestamps
+        timestamps = np.array(range(radarData.shape[0]), dtype=np.float64) * radarConfig.frame_repetition_time_s
 
-    return radarConfig, data, timestamps
+    return radarConfig, radarData, timestamps
 
 def processOneChirp(chirp:np.ndarray, mean:bool =True, window:np.ndarray=None) -> np.ndarray:
     '''
@@ -209,12 +234,26 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
 
     # process frames and fill results array
     for frameNum in range(frameCount):
-        frameRaw = data[frameNum, TX_ANTENNA, RX_ANTENNA].copy()  # select frame i, txAnt 0, rxAnt 0
+        if radarLib_verbose and (frameNum % 1000 ==0):
+            print("> Frame : ",frameNum)
+        if len(data.shape) ==5:
+            frameRaw = data[frameNum, TX_ANTENNA, RX_ANTENNA].copy()  # select frame i, txAnt 0, rxAnt 0
+        else:
+            frameRaw = data[frameNum, RX_ANTENNA].copy()  # select frame i, txAnt 0, rxAnt 0
+
         frameFFT = processOneFrame(frameRaw, mean=True, window=window)  # should use window to get better FFT results
 
-        phi = np.angle( frameFFT[FFTbin-1:FFTbin+1] )
-        results[frameNum] = np.insert(phi, 0, timestamps[frameNum])
-        
+        phi = np.angle( frameFFT[FFTbin-1:FFTbin+2] )
+
+        tmp =  np.insert(phi, 0, timestamps[frameNum])
+        results[frameNum] = tmp
+    # unwrap phase values
+    tmp = results[1:]
+    tmp = np.unwrap(tmp, axis=0)
+    results[1:] = tmp
+
+    if radarLib_verbose:
+        print(">Done! ",frameCount," frames preprocessed")
     return results
 
 # ---------------------------------------------------------------------------------------------------------
@@ -249,7 +288,8 @@ def calcDisplacement(radarConfig:radarConfigData, phaseData:np.ndarray) -> np.nd
     :return:    Numpy-Array with the relative distances (one value less than the phase data)
     '''
     # calculate the phase-change
-    phaseDelta = phaseData[:-1].copy - phaseData[1:]
+    phaseDelta = phaseData[:-1].copy()
+    phaseDelta = phaseDelta -  phaseData[1:]
     # from phase change calculate the freq difference (to the used FFT-bin=)
     freqDelta = (phaseDelta / (2 *np.pi)) * radarConfig.frame_rate_Hz
     # then calculate the RT-time difference form freq difference
@@ -257,7 +297,48 @@ def calcDisplacement(radarConfig:radarConfigData, phaseData:np.ndarray) -> np.nd
     # and convert to distance in m
     distance  = (timeDelta /2) *SPEED_OF_LIGHT
     return distance
-    
+
+
+def calcDisplacementAlt(radarConfig: radarConfigData, phaseData: np.ndarray) -> np.ndarray:
+    '''
+    calculate the distance from the phase shift between consecutive frames
+
+    the calculated distance is relative to the distance equiv to the selected FFT-bin
+    for normal use, only the changes of distance are used -> remove the mean of the data
+
+    :param radarconfig:     radar-configuration
+    :param phaseData:       Numpy-Array with phase data
+    :return:    Numpy-Array with the relative distances (one value less than the phase data)
+    '''
+    # calculate the phase-change
+    phaseDelta = phaseData[:-1].copy()
+    phaseDelta = phaseDelta - phaseData[1:]
+
+    phaseFixed = detrend(phaseData)
+    meanFreq   = (radarConfig.start_frequency_Hz+radarConfig.end_frequency_Hz) /2
+    distPhase  = (phaseFixed / (4 * np.pi)) * meanFreq  # calculate distance from phase
+
+    return distPhase - np.mean(distPhase)
+
+def filterData(data:np.ndarray, lowFreq:float, highFreq:float, fs:float, order : int =4):
+    '''
+    filter data with a butterworth bandpass filter
+    :param data:
+    :param lowFreq:
+    :param highFreq:
+    :param fs:
+    :param order:
+    :return:
+    '''
+    nyq = fs  /2
+    if lowFreq is None:
+        b, a = signal.butter(order, highFreq / nyq, btype="lowpass")
+    else:
+        b, a = signal.butter(order, [lowFreq/nyq, highFreq/nyq], btype="bandpass")
+    return signal.lfilter(b, a, data)
+
+
+
 def findBaseFreq(FFT_data:np.ndarray, timebase:float, weighted:bool=True) ->float:
     '''
     find the 'base' frequency from FFT-data,

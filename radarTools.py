@@ -8,6 +8,43 @@ import os
 import datetime as dt
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy as sp
+
+MAX_PLOT_BPM    = 200
+def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:str = None):
+
+    timestamps  = distData[:,0]
+    timestamps  = timestamps - timestamps[0]    # make tiemstamps start with 0
+    distances   = distData[:,1]  * 1000        # convert to mm
+
+    spectrum    = np.abs(sp.fft.rfft(distances))
+    specFreq    = sp.fft.rfftfreq(len(distances), 1/(framerate_Hz*60))  # display frequencies in 1/min
+
+    # limit FFT-result to reasonable range 0-200 BPM
+    maxFFTidx = int(MAX_PLOT_BPM * len(distances) * 1/(framerate_Hz*60))
+
+    fig, (ax_dist, ax_spec) = plt.subplots(2, 1, figsize=(15, 8), sharex=False)
+
+    ax_dist.plot(timestamps, distances, color='purple')
+    ax_dist.grid(True)
+    ax_dist.set_title(f"relative distance in mm")
+
+    ax_spec.plot(specFreq[:maxFFTidx], spectrum[:maxFFTidx], color='orange')
+    ax_spec.grid(True)
+    ax_spec.set_title("spectrum in 1/min")
+
+    fig.suptitle(name)
+
+    if data_path is not None:
+        plt.tight_layout()
+        plt.savefig(os.path.join(data_path, f"dist_plot_{name}.png"), dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
+
+
+
+
 
 
 def plotRates(data_path:str, name:str, rate_data:np.ndarray):

@@ -1,5 +1,15 @@
 # Notes scratchpad file
 
+## calculate distances from phase changes
+
+deltaPhi(t) = 2*pi*(f1-f2)*t
+-> Phi(t2) - Phi(t1) = 2*pi*(f1-f2) * (t2-t1)
+-> deltaPhi/deltaT = 2*pi*(f1-f2)
+-> deltaF = (deltaPhi / deltaT) / 2*pi 
+
+
+
+
 ## some methods to make the access to radarconfig more handy:
 
 ### 1: create a dataclass from dict
