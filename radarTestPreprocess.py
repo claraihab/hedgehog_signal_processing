@@ -9,17 +9,22 @@ from radarTools import *
 from radarTestDefs import *
 
 maxFrame    = None
-def runPreprocess(dataPath:str, distance:float):
+def runPreprocess(dataPath:str, distance:float, altCalculation:bool=False):
     '''
     run preProcessing for one radar recording and create one file with phase vaues and one with the norm distance values
     :param dataPath:
     :param distance:
+    :param altCalculation: True -> use alternate calculation for signal phase
     :return:
     '''
 
     # preprocess radar data: get phase values for the distance to target (+/-1)
-    radarPhaseData = preProcessRadarData(dataPath, distance, frameMax=maxFrame)
+    radarPhaseData = preProcessRadarData(dataPath=dataPath,
+                                         distance=distance,
+                                         frameMax=maxFrame,
+                                         altCalculation=altCalculation)
     np.save(dataPath + "/radar_phase.npy", radarPhaseData)
+
 
 
 def runDistCalc(dataPath:str):
@@ -61,3 +66,4 @@ if __name__ == '__main__':
         dataPath = radarFilePathes[i]
         distance = radarDistances[i]
         runPreprocess(dataPath, distance)
+        runDistCalc(dataPath)

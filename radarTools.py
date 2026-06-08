@@ -11,14 +11,33 @@ import matplotlib.pyplot as plt
 import scipy as sp
 
 MAX_PLOT_BPM    = 200
+WEIGHTED_PAEK_FIND  = False
+
+def normalize(data:np.ndarray) -> np.ndarray:
+    return (data - np.mean(data)) / np.std(data)
+
 def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:str = None):
 
     timestamps  = distData[:,0]
     timestamps  = timestamps - timestamps[0]    # make tiemstamps start with 0
     distances   = distData[:,1]  * 1000        # convert to mm
 
-    spectrum    = np.abs(sp.fft.rfft(distances))
+    distWindowed= distances * sp.signal.get_window(window='blackman', Nx=len(distances))
+    distNorm    = normalize(distWindowed )
+    spectrum    = sp.fft.rfft( distNorm )
+    specAbs     = np.abs( spectrum )
     specFreq    = sp.fft.rfftfreq(len(distances), 1/(framerate_Hz*60))  # display frequencies in 1/min
+
+    # find peak freq
+    if WEIGHTED_PAEK_FIND:
+        weights = np.array(range(len(specAbs)), dtype=np.float64)
+        weights[0] = 9e20  # make weight[0] very big to remove DC-Part
+        weighted = spectrum / weights
+        peakIdx = np.argmax(weighted)
+    else :
+        peakIdx = np.argmax(specAbs)
+    peakFreq = specFreq[peakIdx]
+
 
     # limit FFT-result to reasonable range 0-200 BPM
     maxFFTidx = int(MAX_PLOT_BPM * len(distances) * 1/(framerate_Hz*60))
@@ -29,9 +48,10 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:s
     ax_dist.grid(True)
     ax_dist.set_title(f"relative distance in mm")
 
-    ax_spec.plot(specFreq[:maxFFTidx], spectrum[:maxFFTidx], color='orange')
+    ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color='orange')
     ax_spec.grid(True)
     ax_spec.set_title("spectrum in 1/min")
+    ax_spec.axvline(peakFreq, color='orange', linestyle=":")
 
     fig.suptitle(name)
 
@@ -42,7 +62,7 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:s
     else:
         plt.show()
 
-
+    return peakFreq
 
 
 
