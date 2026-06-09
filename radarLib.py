@@ -393,6 +393,31 @@ def notchFilter(data:np.ndarray, freq:float, fs:float, Q : float =20):
     b,a = signal.iirnotch(freq, Q, fs)
     return signal.lfilter( b, a, data.copy())
 
+
+def normalize(data:np.ndarray) -> np.ndarray:
+    return (data - np.mean(data)) / np.std(data)
+
+def calcRate(distData:np.ndarray, framerate_Hz:float) -> float:
+    distNorm    = normalize(distData )
+    distWindowed= distNorm * signal.get_window(window='blackman', Nx=len(distData))
+    spectrum    = sp.fft.rfft( distWindowed )
+    specAbs     = np.abs( spectrum )
+    specFreq    = sp.fft.rfftfreq(len(distData), 1/(framerate_Hz*60))  # display frequencies in 1/min
+
+    peakIdx = np.argmax(specAbs)
+    peakFreq = specFreq[peakIdx]
+    
+    return peakFreq
+
+
+
+
+
+
+
+
+# unused !!!
+# ------------
 def findBaseFreq(FFT_data:np.ndarray, timebase:float, weighted:bool=True) ->float:
     '''
     find the 'base' frequency from FFT-data,

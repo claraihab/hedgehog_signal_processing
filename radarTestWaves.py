@@ -13,8 +13,11 @@ USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
 USE_FFT_FILT    = False
 
-
-
+# filter frequencies for dog or not-hibernating hedgehog
+MIN_LOW_FREQ    = 5
+MAX_LOW_FREQ    = 50
+MIN_HIGH_FREQ   = 60
+MAX_HIGH_FREQ   = 150
 
 def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
@@ -24,19 +27,10 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
 
     frames_per_min = radarConfig.frame_rate_Hz * 60
 
-    if savePlot:
-        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, dataPath)
-    else:
-        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum', None)
-
-
     plotDataLow = plotData.copy()
-    plotDataLow[:,1]  = filterData(plotDataLow[:,1], 5, 50, frames_per_min, order=4 )
-
-    if savePlot:
-        breathRate = plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)'+name_suffix, dataPath)
-    else:
-        breathRate = plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)', None)
+    # bandpass-filter for breathrate
+    plotDataLow[:,1]  = filterData(plotDataLow[:,1], MIN_LOW_FREQ, MAX_LOW_FREQ, frames_per_min, order=4 )
+    breathRate = calcRate( plotDataLow, radarConfig.frame_rate_Hz )
     print("Breathrate : ", breathRate)
 
     plotDataHigh = plotData.copy()
@@ -45,13 +39,20 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*3, Q=5, fs=frames_per_min)
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
     # filter for heartRate
-    plotDataHigh[:,1] = filterData(plotDataHigh[:,1],60, 150, frames_per_min, order=4 )
+    plotDataHigh[:,1] = filterData(plotDataHigh[:,1],MIN_HIGH_FREQ, MAX_HIGH_FREQ, frames_per_min, order=4 )
+    heartRate = calcRate( plotDataHigh, radarConfig.frame_rate_Hz )
+    print('Heartrate : ', heartRate)
 
+    # plot all data
     if savePlot:
-        heartrate = plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)'+name_suffix, dataPath)
+        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, dataPath)
+        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)'+name_suffix, dataPath)
+        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)'+name_suffix, dataPath)
     else:
-        heartrate = plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)', None)
-    print('Heartrate : ', heartrate)
+        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum', None)
+        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)', None)
+        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)', None)
+
 
 def FFTidx(freq:float, dataLen:int, fs:float):
     return int(freq * dataLen * (1/fs) ) +1
@@ -82,8 +83,6 @@ def plotDistDataChunkFFT(radarConfig:radarConfigData, plotData:np.ndarray, saveP
     breathIdx        = np.argmax(spectrumLow)
     breathRate       = specFreq[ breathIdx ]
     print("Breathrate = ",breathRate)
-
-
 
     spectrumHigh     = spectrum.copy()
     minIdx          = FFTidx(HIGH_RATE_MIN, len(plotData), radarConfig.frame_rate_Hz*60)+1
@@ -144,7 +143,7 @@ def plotDistData(dataPath:str, savePlot:bool = False):
     framesPerMinute    = radarConfig.frame_rate_Hz * 60
     print("> Frames-per-minute : ", framesPerMinute)
 
-    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 2 min
+    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 30sec
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
     plotData = distData[ofs:ofs+plotLen,:]
     if USE_FFT_FILT:
