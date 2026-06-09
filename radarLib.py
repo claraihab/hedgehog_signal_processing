@@ -53,6 +53,11 @@ class radarConfigData:
 
 
 def importRadarConfig(dataPath : str) -> radarConfigData:
+    """
+    read the JSOM-file with the used configuration and return dataclass-object
+    :param dataPath:
+    :return:
+    """
     if radarLib_verbose:
         print("importRadarConfig("+dataPath+")")
     config_filename = os.path.join(dataPath, CONFIG_NAME)
@@ -152,7 +157,7 @@ def processOneFrame(frame:np.ndarray, mean:bool=False, window:np.ndarray=None) -
     chirpCnt    = frameShape[0]     # number of chirps in one frame
     chirpSmpls  = frameShape[1]     # number of samples in one chirp
 
-    if (window is not None) and (len(window) !=chirpSmpls)
+    if (window is not None) and (len(window) !=chirpSmpls):
         print("Error: Length of window has to be equal to numerber of samples in chirp!")
         return None
 
@@ -193,15 +198,16 @@ def processOneFrameAlt(frame:np.ndarray, mean:bool=False, window:np.ndarray=None
     chirpCnt   = frameShape[0]  # number of chirps in one frame
     chirpSmpls = frameShape[1]  # number of samples in one chirp
 
-    if (window is not None) and (len(window) !=chirpSmpls)
+    if (window is not None) and (len(window) !=chirpSmpls):
         print("Error: Length of window has to be equal to numerber of samples in chirp!")
         return None
 
     # calc mean of all chirps in one frame
-    chirpSum = np.zeros(chirpSmpls, dtype=float)
-    for i in range(chirpCnt):
-        chirpSum = chirpSum + frame[i]
-    chirpSum = chirpSum / chirpCnt
+    chirpSum = np.mean(frame, axis=0)
+    # chirpSum = np.zeros(chirpSmpls, dtype=float)
+    # for i in range(chirpCnt): chirpSum = chirpSum + frame[i]
+    # chirpSum = chirpSum / chirpCnt
+
     # remove DC-offset
     if mean:
         chirpMean = chirpSum.mean()
@@ -353,7 +359,8 @@ def calcDisplacementAlt(radarConfig: radarConfigData, phaseData: np.ndarray) -> 
     '''
     phaseFixed = detrend(phaseData)
     meanFreq   = (radarConfig.start_frequency_Hz+radarConfig.end_frequency_Hz) /2
-    distPhase  = (phaseFixed / (4 * np.pi)) * meanFreq  # calculate distance from phase
+    meanWavelength  = SPEED_OF_LIGHT / meanFreq
+    distPhase  = (phaseFixed / (4 * np.pi)) * meanWavelength  # calculate distance from phase
 
     return distPhase - np.mean(distPhase)
 

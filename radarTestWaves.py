@@ -9,39 +9,48 @@ from radarTools import *
 from radarTestDefs import *
 
 PLOT_RANGE      = 30    #how much data to plot in s
+USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
+USE_FFT_FILT    = False
 
 
 
-def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, datapath:str=None):
+
+def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
         name_suffix = ' - alt'
     else:
         name_suffix = ''
 
     frames_per_min = radarConfig.frame_rate_Hz * 60
+
+    if savePlot:
+        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, dataPath)
+    else:
+        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum', None)
+
+
     plotDataLow = plotData.copy()
     plotDataLow[:,1]  = filterData(plotDataLow[:,1], 5, 50, frames_per_min, order=4 )
 
     if savePlot:
-        breathRate = plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (1-25 BPM)'+name_suffix, dataPath)
+        breathRate = plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)'+name_suffix, dataPath)
     else:
-        breathRate = plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (1-25 BPM)', None)
-
+        breathRate = plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)', None)
     print("Breathrate : ", breathRate)
-    # remove harmonics of breathrate
-    plotDataHigh = plotData.copy()
 
+    plotDataHigh = plotData.copy()
+    # remove harmonics of breathrate
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*2, Q=5, fs=frames_per_min)
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*3, Q=5, fs=frames_per_min)
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
-
+    # filter for heartRate
     plotDataHigh[:,1] = filterData(plotDataHigh[:,1],60, 150, frames_per_min, order=4 )
 
     if savePlot:
-        heartrate = plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (25-100 BPM)'+name_suffix, dataPath)
+        heartrate = plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)'+name_suffix, dataPath)
     else:
-        heartrate = plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (25-100 BPM)', None)
+        heartrate = plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)', None)
     print('Heartrate : ', heartrate)
 
 def FFTidx(freq:float, dataLen:int, fs:float):
@@ -116,11 +125,15 @@ def plotDistDataChunkFFT(radarConfig:radarConfigData, plotData:np.ndarray, saveP
 
 def plotDistData(dataPath:str, savePlot:bool = False):
     if USE_ALT_DIST:
-        dataFilename    = dataPath+"/radar_distance_alt.npy" # os.path.join(path,"radar_distance.py")
-        name_suffix = ' - alt'
+        if USE_ALT_PHASE:
+            dataFilename = dataPath + "/radar_distance2_alt.npy"  # os.path.join(path,"radar_distance.py")
+        else:
+            dataFilename    = dataPath+"/radar_distance_alt.npy" # os.path.join(path,"radar_distance.py")
     else:
-        dataFilename    = dataPath+"/radar_distance.npy" # os.path.join(path,"radar_distance.py")
-        name_suffix = ''
+        if USE_ALT_PHASE:
+            dataFilename = dataPath + "/radar_distance2.npy"  # os.path.join(path,"radar_distance.py")
+        else:
+            dataFilename    = dataPath+"/radar_distance.npy" # os.path.join(path,"radar_distance.py")
 
     print("Processing : ", dataFilename)
     distData        = np.load(dataFilename)
@@ -134,13 +147,18 @@ def plotDistData(dataPath:str, savePlot:bool = False):
     plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 2 min
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
     plotData = distData[ofs:ofs+plotLen,:]
-    plotDistDataChunkFFT(radarConfig, plotData, savePlot, dataPath)
+    if USE_FFT_FILT:
+        plotDistDataChunkFFT(radarConfig, plotData, savePlot, dataPath)
+    else:
+        plotDistDataChunk(radarConfig, plotData, savePlot, dataPath)
 
 
 
 
 if __name__ == '__main__':
-    # plotDistData(radarFilePathes[4], False)
-    for path in radarFilePathes: plotDistData(path, True)
+    plotDistData(radarFilePathes[0], True)
+    plotDistData(radarFilePathes[4], True)
+    plotDistData(radarFilePathes[6], True)
+    # for path in radarFilePathes: plotDistData(path, True)
 
 

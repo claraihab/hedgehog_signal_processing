@@ -23,13 +23,20 @@ def runPreprocess(dataPath:str, distance:float, altCalculation:bool=False):
                                          distance=distance,
                                          frameMax=maxFrame,
                                          altCalculation=altCalculation)
-    np.save(dataPath + "/radar_phase.npy", radarPhaseData)
+    if altCalculation:
+        np.save(dataPath + "/radar_phase2.npy", radarPhaseData)
+    else:
+        np.save(dataPath + "/radar_phase.npy", radarPhaseData)
 
 
 
-def runDistCalc(dataPath:str):
-    radarPhaseData = np.load(dataPath + "/radar_phase.npy")
+def runDistCalc(dataPath:str, altCalculation:bool=False):
     radarConfig = importRadarConfig(dataPath)
+
+    if altCalculation:
+        radarPhaseData = np.load(dataPath + "/radar_phase2.npy")
+    else:
+        radarPhaseData = np.load(dataPath + "/radar_phase.npy")
 
     # convert phaseData to distance-data
     dataShape = radarPhaseData.shape
@@ -43,7 +50,10 @@ def runDistCalc(dataPath:str):
         distanceCol = calcDisplacement(radarConfig, radarPhaseData[:,col])
         distanceData[:, col] = distanceCol - np.mean(distanceCol)
 
-    np.save(dataPath + "/radar_distance.npy", distanceData)
+    if altCalculation:
+        np.save(dataPath + "/radar_distance2.npy", distanceData)
+    else:
+        np.save(dataPath + "/radar_distance.npy", distanceData)
 
     # alternate calc of distances :
     # create empty results array to speed up later work
@@ -54,16 +64,27 @@ def runDistCalc(dataPath:str):
         distanceCol = calcDisplacementAlt(radarConfig, radarPhaseData[:,col])
         distanceData[:, col] = distanceCol - np.mean(distanceCol)
 
-    np.save(dataPath + "/radar_distance_alt.npy", distanceData)
+    if altCalculation:
+        np.save(dataPath + "/radar_distance2_alt.npy", distanceData)
+    else:
+        np.save(dataPath + "/radar_distance_alt.npy", distanceData)
 
 
 
 if __name__ == '__main__':
     radarLib.radarLib_verbose    = True     # radarLib should print propgress info
 
+    dataPath = radarFilePathes[4]
+    distance = radarDistances[4]
+    runPreprocess(dataPath, distance, altCalculation=False)
+    runDistCalc(dataPath, altCalculation=False)
+    runPreprocess(dataPath, distance, altCalculation=True)
+    runDistCalc(dataPath, altCalculation=True)
 
+    '''
     for i in  range(1,len(radarFilePathes)):
         dataPath = radarFilePathes[i]
         distance = radarDistances[i]
         runPreprocess(dataPath, distance)
         runDistCalc(dataPath)
+    '''
