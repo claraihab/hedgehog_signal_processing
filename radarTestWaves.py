@@ -30,7 +30,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     plotDataLow = plotData.copy()
     # bandpass-filter for breathrate
     plotDataLow[:,1]  = filterData(plotDataLow[:,1], MIN_LOW_FREQ, MAX_LOW_FREQ, frames_per_min, order=4 )
-    breathRate = calcRate( plotDataLow, radarConfig.frame_rate_Hz )
+    breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
     print("Breathrate : ", breathRate)
 
     plotDataHigh = plotData.copy()
@@ -40,7 +40,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
     # filter for heartRate
     plotDataHigh[:,1] = filterData(plotDataHigh[:,1],MIN_HIGH_FREQ, MAX_HIGH_FREQ, frames_per_min, order=4 )
-    heartRate = calcRate( plotDataHigh, radarConfig.frame_rate_Hz )
+    heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
     print('Heartrate : ', heartRate)
 
     # plot all data
@@ -151,8 +151,60 @@ def plotDistData(dataPath:str, savePlot:bool = False):
     else:
         plotDistDataChunk(radarConfig, plotData, savePlot, dataPath)
 
+def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list, heartRange:list ) :
+    """
+    calculate breathRate and heartrate from the DistData
+    :param radarConfig:
+    :param distData:
+    :return:    a dict with breathrate and heartrate
+    """
+    frames_per_min = radarConfig.frame_rate_Hz * 60
 
+    plotDataLow = distData.copy()
+    # bandpass-filter for breathrate
+    plotDataLow[:,1]  = filterData(plotDataLow[:,1], breathRange[0], breathRange[1], frames_per_min, order=4 )
+    breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
 
+    plotDataHigh = distData.copy()
+    # remove harmonics of breathrate
+    plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*2, Q=5, fs=frames_per_min)
+    plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*3, Q=5, fs=frames_per_min)
+    plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
+    # filter for heartRate
+    plotDataHigh[:,1] = filterData(plotDataHigh[:,1],heartRange[0], heartRange[1], frames_per_min, order=4 )
+    heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
+    
+    return {'Breathrate':breathRate, 'Heartrate':heartRate }
+
+def calcRatesOverTime(dataPath:str, plotRange:int):
+    """
+    calculate the breath- and heartrate for different parts of the distanceData
+    :param dataPath:    where to find the data
+    :param plotRange:   how much time to use for the calcuölation
+    :return:    a list with breathrates and heartrates
+    """
+    dataFilename = dataPath + "/radar_distance_alt.npy"  # os.path.join(path,"radar_distance.py")
+    distData        = np.load(dataFilename)
+    distCount       = distData.shape[0]
+    radarConfig     = importRadarConfig(dataPath)
+    
+    # which frequency ranges to use
+    breathRange = [MIN_LOW_FREQ, MAX_LOW_FREQ]
+    heartRange  = [MIN_HIGH_FREQ, MAX_HIGH_FREQ]
+    
+    rates = []
+    rateLen = int(radarConfig.frame_rate_Hz * plotRange)    # how much data to use for calculation
+    for ofs in range(0, distCount-rateLen, rateLen//2):
+        # select part of data to calculate rates
+        rateData = distData[ofs:ofs+rateLen,:]
+        # calculate rates from selected data
+        breath_heart_rate = calcRates(radarConfig, rateData, breathRange, heartRange)
+        # append calculated rates to list
+        rates.append(breath_heart_rate)
+    # return list of calculated rates
+    return rates
+    
+    
 
 if __name__ == '__main__':
     plotDistData(radarFilePathes[0], True)
