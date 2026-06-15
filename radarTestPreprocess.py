@@ -1,5 +1,5 @@
 '''
-    test the preprocessing of radarLib
+test the preprocessing of radarLib
 '''
 
 import radarLib
@@ -39,11 +39,11 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
         radarPhaseData = np.load(dataPath + "/radar_phase.npy")
 
     # convert phaseData to distance-data
-    dataShape = radarPhaseData.shape
+    dataShape = radarPhaseData.shape #??????
     frameCount = dataShape[0]
 
     # create empty results array to speed up later work
-    distanceData = np.zeros([frameCount-1,4], dtype=float)
+    distanceData = np.zeros([frameCount-1,4], dtype=float) 
     distanceData[:,0] = radarPhaseData[:-1,0]   # copy timestamps from phase data
     # calculate the distance data from the phase data
     for col in [1,2,3]:
@@ -72,18 +72,20 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
 
 
 if __name__ == '__main__':
-    radarLib.radarLib_verbose    = True     # radarLib should print propgress info
+    radarLib.radarLib_verbose    = True     # radarLib should print progress info
 
-    dataPath = radarFilePathes[4]
-    distance = radarDistances[4]
+    dataPath = radarFilePaths[1]
+    distance = radarDistances[1]
     runPreprocess(dataPath, distance, altCalculation=False)
     runDistCalc(dataPath, altCalculation=False)
+    
     runPreprocess(dataPath, distance, altCalculation=True)
     runDistCalc(dataPath, altCalculation=True)
 
+
     '''
-    for i in  range(1,len(radarFilePathes)):
-        dataPath = radarFilePathes[i]
+    for i in  range(1,len(radarFilePaths)):
+        dataPath = radarFilePaths[i]
         distance = radarDistances[i]
         runPreprocess(dataPath, distance)
         runDistCalc(dataPath)

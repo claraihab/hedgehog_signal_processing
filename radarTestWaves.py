@@ -4,20 +4,33 @@
 
 import os
 import numpy as np
+import pandas as pd
 from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-PLOT_RANGE      = 30    #how much data to plot in s
+PLOT_RANGE      = 360    #how much data to plot in s
 USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
 USE_FFT_FILT    = False
 
-# filter frequencies for dog or not-hibernating hedgehog
-MIN_LOW_FREQ    = 5
-MAX_LOW_FREQ    = 50
-MIN_HIGH_FREQ   = 60
-MAX_HIGH_FREQ   = 150
+# filter frequencies for hibernating hedgehog
+MIN_LOW_FREQ_HIB   = 0.5 #for breathing
+MAX_LOW_FREQ_HIB    = 10 #should decrease from 14
+MIN_HIGH_FREQ_HIB  = 2 #for heart rate
+MAX_HIGH_FREQ_HIB  = 25
+
+#normal, for arousals
+NORMAL_LOW_FREQ_MIN   = 10 #for breathing
+NORMAL_LOW_FREQ_MAX = 50
+NORMAL_HIGH_FREQ_MIN  = 60 #for heart rate
+NORMAL_HIGH_FREQ_MAX   = 280
+
+HIB_BREATH_BAND = [MIN_LOW_FREQ_HIB, MAX_LOW_FREQ_HIB]     
+HIB_HEART_BAND = [MIN_HIGH_FREQ_HIB, MAX_HIGH_FREQ_HIB]   
+
+AWAKE_BREATH_BAND  = [NORMAL_LOW_FREQ_MIN, NORMAL_LOW_FREQ_MAX] 
+AWAKE_HEART_BAND  = [NORMAL_HIGH_FREQ_MIN, NORMAL_HIGH_FREQ_MAX]  
 
 def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
@@ -25,11 +38,12 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     else:
         name_suffix = ''
 
-    frames_per_min = radarConfig.frame_rate_Hz * 60
+    frames_per_min = radarConfig.frame_rate_Hz * 60 
+    print(frames_per_min)
 
     plotDataLow = plotData.copy()
     # bandpass-filter for breathrate
-    plotDataLow[:,1]  = filterData(plotDataLow[:,1], MIN_LOW_FREQ, MAX_LOW_FREQ, frames_per_min, order=4 )
+    plotDataLow[:,1]  = filterData(plotDataLow[:,1], HIB_BREATH_BAND[0], HIB_BREATH_BAND[1], frames_per_min, order=4 )
     breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
     print("Breathrate : ", breathRate)
 
@@ -39,28 +53,30 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*3, Q=5, fs=frames_per_min)
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
     # filter for heartRate
-    plotDataHigh[:,1] = filterData(plotDataHigh[:,1],MIN_HIGH_FREQ, MAX_HIGH_FREQ, frames_per_min, order=4 )
+    plotDataHigh[:,1] = filterData(plotDataHigh[:,1], HIB_HEART_BAND[0], HIB_HEART_BAND[1], frames_per_min, order=4 )
     heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
     print('Heartrate : ', heartRate)
 
     # plot all data
     if savePlot:
-        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, dataPath)
-        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)'+name_suffix, dataPath)
-        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)'+name_suffix, dataPath)
+        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, hibernate = True, data_path = dataPath)
+        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix, hibernate = True, data_path = dataPath)
+        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate'+name_suffix, hibernate = True, data_path = dataPath)
     else:
-        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum', None)
-        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate (5-50 BPM)', None)
-        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate (60-150 BPM)', None)
+        plotDistances(plotData, radarConfig.frame_rate_Hz,'full-spectrum', hibernate = True)
+        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate', hibernate = True)
+        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate', hibernate = True)
 
 
 def FFTidx(freq:float, dataLen:int, fs:float):
     return int(freq * dataLen * (1/fs) ) +1
 
+
 LOW_RATE_MAX    = 60
 HIGH_RATE_MIN   = LOW_RATE_MAX
 HIGH_RATE_MAX   = 150
 MAX_PLOT_BPM    = 200
+
 def plotDistDataChunkFFT(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
         name_suffix = ' - alt'
@@ -145,11 +161,15 @@ def plotDistData(dataPath:str, savePlot:bool = False):
 
     plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 30sec
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
-    plotData = distData[ofs:ofs+plotLen,:]
-    if USE_FFT_FILT:
-        plotDistDataChunkFFT(radarConfig, plotData, savePlot, dataPath)
-    else:
-        plotDistDataChunk(radarConfig, plotData, savePlot, dataPath)
+    
+    for ofs in range(0, distCount-plotLen, plotLen//2):
+        plotData = distData[ofs:ofs+plotLen,:]
+        if USE_FFT_FILT:
+            plotDistDataChunkFFT(radarConfig, plotData, savePlot, dataPath)
+        else:
+            plotDistDataChunk(radarConfig, plotData, savePlot, dataPath)
+
+
 
 def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list, heartRange:list ) :
     """
@@ -180,7 +200,7 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
     """
     calculate the breath- and heartrate for different parts of the distanceData
     :param dataPath:    where to find the data
-    :param plotRange:   how much time to use for the calcuölation
+    :param plotRange:   how much time to use for the calculation
     :return:    a list with breathrates and heartrates
     """
     dataFilename = dataPath + "/radar_distance_alt.npy"  # os.path.join(path,"radar_distance.py")
@@ -188,28 +208,34 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
     distCount       = distData.shape[0]
     radarConfig     = importRadarConfig(dataPath)
     
-    # which frequency ranges to use
-    breathRange = [MIN_LOW_FREQ, MAX_LOW_FREQ]
-    heartRange  = [MIN_HIGH_FREQ, MAX_HIGH_FREQ]
-    
     rates = []
     rateLen = int(radarConfig.frame_rate_Hz * plotRange)    # how much data to use for calculation
     for ofs in range(0, distCount-rateLen, rateLen//2):
         # select part of data to calculate rates
         rateData = distData[ofs:ofs+rateLen,:]
+
+        #grab timestamps
+        window_timestamp = distData[ofs, 0]
+
         # calculate rates from selected data
-        breath_heart_rate = calcRates(radarConfig, rateData, breathRange, heartRange)
+        breath_heart_rate = calcRates(radarConfig, rateData, HIB_BREATH_BAND, HIB_HEART_BAND)
         # append calculated rates to list
-        rates.append(breath_heart_rate)
+        rates.append({
+            "Timestamp_s": window_timestamp,
+            "Breathing_Rate_BPM": breath_heart_rate['Breathrate'],
+            "Heart_Rate_BPM": breath_heart_rate['Heartrate']
+       })
     # return list of calculated rates
     return rates
-    
-    
+
 
 if __name__ == '__main__':
-    plotDistData(radarFilePathes[0], True)
-    plotDistData(radarFilePathes[4], True)
-    plotDistData(radarFilePathes[6], True)
-    # for path in radarFilePathes: plotDistData(path, True)
+    rates = calcRatesOverTime(radarFilePaths[1], PLOT_RANGE)
+    rates_df = pd.Dataframe.from_dict(rates) 
+    rates_df.to_csv(radarFilePaths[1] + "rates.csv") #save rates to a csv 
+    #plotDistData(radarFilePaths[1], True) 
+    #plotDistData(radarFilePaths[4], True) #which of the two should be plotted
+   # plotDistData(radarFilePaths[6], True)
+    # for path in radarFilePaths: plotDistData(path, True)
 
 

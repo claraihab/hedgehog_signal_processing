@@ -10,22 +10,23 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
 
+MAX_PLOT_BPM_HIB   = 70 
 MAX_PLOT_BPM    = 200
+
 WEIGHTED_PAEK_FIND  = False
 
 def normalize(data:np.ndarray) -> np.ndarray:
     return (data - np.mean(data)) / np.std(data)
 
-def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:str = None):
-
+def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, hibernate: bool = False, data_path:str = None):
     timestamps  = distData[:,0]
     timestamps  = timestamps - timestamps[0]    # make tiemstamps start with 0
     distances   = distData[:,1]  * 1000        # convert to mm
 
     distWindowed= distances * sp.signal.get_window(window='blackman', Nx=len(distances))
-    distNorm    = normalize(distWindowed )
-    spectrum    = sp.fft.rfft( distNorm )
-    specAbs     = np.abs( spectrum )
+    distNorm    = normalize(distWindowed)
+    spectrum    = sp.fft.rfft(distNorm)
+    specAbs     = np.abs(spectrum)
     specFreq    = sp.fft.rfftfreq(len(distances), 1/(framerate_Hz*60))  # display frequencies in 1/min
 
     # find peak freq
@@ -40,7 +41,11 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:s
 
 
     # limit FFT-result to reasonable range 0-200 BPM
-    maxFFTidx = int(MAX_PLOT_BPM * len(distances) * 1/(framerate_Hz*60))
+    if hibernate:
+        maxFFTidx = int(MAX_PLOT_BPM_HIB * len(distances) * 1/(framerate_Hz*60))
+    else:
+        maxFFTidx = int(MAX_PLOT_BPM * len(distances) * 1/(framerate_Hz*60))
+
 
     fig, (ax_dist, ax_spec) = plt.subplots(2, 1, figsize=(15, 8), sharex=False)
 
@@ -48,7 +53,7 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:s
     ax_dist.grid(True)
     ax_dist.set_title(f"relative distance in mm")
 
-    ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color='orange')
+    ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color='orange') 
     ax_spec.grid(True)
     ax_spec.set_title("spectrum in 1/min")
     ax_spec.axvline(peakFreq, color='orange', linestyle=":")
@@ -63,7 +68,6 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, data_path:s
         plt.show()
 
     return peakFreq
-
 
 
 
@@ -100,6 +104,9 @@ def plotRates(data_path:str, name:str, rate_data:np.ndarray):
     plt.tight_layout()
     plt.savefig(os.path.join(data_path, f"rate_plot_{name}.png"), dpi=150)
     plt.close(fig)
+
+
+
 
 def plotMovements(data_path: str, name: str, distance_data: np.ndarray):
     '''
@@ -163,4 +170,6 @@ def plotFFTdata(data_path: str, name: str, FFT_data: np.ndarray, timebase:float)
     plt.savefig(os.path.join(data_path, f"fft_plot_{name}.png"), dpi=150)
     plt.close(fig)
 
-    
+
+
+

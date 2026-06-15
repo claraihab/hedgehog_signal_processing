@@ -27,7 +27,7 @@ radarLib_verbose    = False     # if set to True PreProcessRadarData will print 
 @dataclass
 class radarConfigData:
     '''
-    dataclass for the data in the config.json with addition of some derivated values
+    dataclass for the data in the config.json with addition of some derived values
     
     defining it as a dataclass enables auto-completion
     '''
@@ -90,18 +90,19 @@ def importRadarConfig(dataPath : str) -> radarConfigData:
 # ------------------------------------------------------
 
 
-def importRadarData(dataPath : str) -> (dict, np.ndarray, np.ndarray):
+def importRadarData(dataPath : str) -> tuple: #changed to tuple
     '''
     import radar-data and configuration
     :param dataPath:
     :return: dictionary with configuration for this recording and numpy-array with raw radar data
     '''
-    dataFile    = dataPath + "\\" + DATA_NAME
-    timestampFile = dataPath + "\\" + TIMESTAMP_NAME
+    dataFile = os.path.join(dataPath, DATA_NAME)
+    timestampFile = os.path.join(dataPath, TIMESTAMP_NAME)
+
     # read JSON-File with configuration and convert to dataclass
     radarConfig = importRadarConfig(dataPath)
     # read radar data
-    radarData = np.load(dataFile)
+    radarData = np.load(dataFile, mmap_mode= "r")  #memory mapping
     # read timestamps
     try:
         timestamps = np.loadtxt(timestampFile)
@@ -110,6 +111,7 @@ def importRadarData(dataPath : str) -> (dict, np.ndarray, np.ndarray):
         timestamps = np.array(range(radarData.shape[0]), dtype=np.float64) * radarConfig.frame_repetition_time_s
 
     return radarConfig, radarData, timestamps
+
 
 def processOneChirp(chirp:np.ndarray, mean:bool =True, window:np.ndarray=None) -> np.ndarray:
     '''
@@ -239,7 +241,7 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
     '''
     import raw radar-data, process frames and return numpy-array with timestamps and angles from FFTbins
 
-    the array returned will have 1 lien per frame with 4 columns:
+    the array returned will have 1 line per frame with 4 columns:
     - timestamps : timestamp of the frame
     - FFTbin calculated from distance
     - FFTbin before the FFTbin calculated from distance
@@ -278,6 +280,7 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
         print("Invalid distance!")
         return None
     
+    print(f"   [Target Locked] FFT Bin: {FFTbin} for Distance: {distance}m")
     # create NP-array zero initialised to speed up
     results = np.zeros([frameCount,4], dtype=float)
 
@@ -300,17 +303,22 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
         tmp =  np.insert(phi, 0, timestamps[frameNum])
         results[frameNum] = tmp
     # unwrap phase values
-    tmp = results[1:]
-    tmp = np.unwrap(tmp, axis=0)
-    results[1:] = tmp
+    
+    results[:, 1:] = np.unwrap(results[:, 1:], axis=0) #alternative to exclude timestamps
 
     if radarLib_verbose:
         print(">Done! ",frameCount," frames preprocessed")
     return results
 
+def saveRadarAngles(radarAngles:np.ndarray, dataPath:str):
+    anglesFile = os.path.join(dataPath, ANGLES_NAME)
+    np.save(anglesFile, radarAngles)
+
+
 # ---------------------------------------------------------------------------------------------------------
 # functions for preprocessed data
 # ---------------------------------------------------------------------------------------------------------
+
 
 def importRadarPhasedata(dataPath:str):
     '''
@@ -318,11 +326,10 @@ def importRadarPhasedata(dataPath:str):
     :param dataPath:    where to find files
     :return:            deviceConfig, preprocessed radar-data
     '''
-    angelsFile  = dataPath + "\\" + ANGLES_NAME
-    # read JSON-File with configuration
-    radarConfig = importRadarConfig(dataPath)
+    anglesFile = os.path.join(dataPath, ANGLES_NAME)    
+    radarConfig = importRadarConfig(dataPath) # read JSON-File with configuration
     # read radar data
-    phaseData = np.load(angelsFile)
+    phaseData = np.load(anglesFile)
     return radarConfig, phaseData
 
 
@@ -363,6 +370,8 @@ def calcDisplacementAlt(radarConfig: radarConfigData, phaseData: np.ndarray) -> 
     distPhase  = (phaseFixed / (4 * np.pi)) * meanWavelength  # calculate distance from phase
 
     return distPhase - np.mean(distPhase)
+
+
 
 def filterData(data:np.ndarray, lowFreq:float, highFreq:float, fs:float, order : int =4):
     '''
@@ -446,11 +455,13 @@ def maskFFTdata(FFT_data:np.ndarray,  timebase:float, min_Hz:float, max_Hz:float
     :param max_Hz:
     :return:
     '''
-    min_idx = min_Hz * timebase
-    max_idx = max_Hz * timebase
+    min_idx = int(min_Hz * timebase)
+    max_idx = int(max_Hz * timebase)
+
     data = FFT_data.copy()  # reserve original data
     if min_idx >0:
         data[0:min_idx] = 0
     if max_idx >0 and max_idx <=len(data):
         data[max_idx:]  = 0
     return data
+
