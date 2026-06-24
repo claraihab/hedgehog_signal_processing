@@ -9,7 +9,7 @@ from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-PLOT_RANGE      = 360    #how much data to plot in s
+PLOT_RANGE      = 600    #how much data to plot in s
 USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
 USE_FFT_FILT    = False
@@ -18,7 +18,7 @@ USE_FFT_FILT    = False
 MIN_LOW_FREQ_HIB   = 0.5 #for breathing
 MAX_LOW_FREQ_HIB    = 10 #should decrease from 14
 MIN_HIGH_FREQ_HIB  = 2 #for heart rate
-MAX_HIGH_FREQ_HIB  = 25
+MAX_HIGH_FREQ_HIB  = 25 
 
 #normal, for arousals
 NORMAL_LOW_FREQ_MIN   = 10 #for breathing
@@ -31,6 +31,9 @@ HIB_HEART_BAND = [MIN_HIGH_FREQ_HIB, MAX_HIGH_FREQ_HIB]
 
 AWAKE_BREATH_BAND  = [NORMAL_LOW_FREQ_MIN, NORMAL_LOW_FREQ_MAX] 
 AWAKE_HEART_BAND  = [NORMAL_HIGH_FREQ_MIN, NORMAL_HIGH_FREQ_MAX]  
+
+# Define an arousal threshold (variance of displacement)
+AROUSAL_THRESHOLD = 0.05 
 
 def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
@@ -213,29 +216,78 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
     for ofs in range(0, distCount-rateLen, rateLen//2):
         # select part of data to calculate rates
         rateData = distData[ofs:ofs+rateLen,:]
-
         #grab timestamps
         window_timestamp = distData[ofs, 0]
+        displacement = rateData[:, 1]
 
+        # AROUSAL DETECTION FOR THIS WINDOW 
+        window_std = np.std(displacement)
+        is_aroused = window_std > AROUSAL_THRESHOLD
+
+        if is_aroused:
+            status = "awake/arousal state"
+        else:
+            status = "hibernating"
+            
         # calculate rates from selected data
         breath_heart_rate = calcRates(radarConfig, rateData, HIB_BREATH_BAND, HIB_HEART_BAND)
         # append calculated rates to list
         rates.append({
             "Timestamp_s": window_timestamp,
             "Breathing_Rate_BPM": breath_heart_rate['Breathrate'],
-            "Heart_Rate_BPM": breath_heart_rate['Heartrate']
-       })
+            "Heart_Rate_BPM": breath_heart_rate['Heartrate'],
+            "Arousal_Flag": status,
+            "Displacement_Std": window_std
+            })
     # return list of calculated rates
     return rates
 
 
+def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
+    """
+    calculate the breath- and heartrate for different parts of the distanceData
+    :param dataPath:    where to find the data
+    :param plotRange:   how much time to use for the calculation
+    :return:    a list with breathrates and heartrates
+    """
+    dataFilename = dataPath + "/radar_distance_alt.npy"  # os.path.join(path,"radar_distance.py")
+    distData        = np.load(dataFilename)
+    distCount       = distData.shape[0]
+    radarConfig     = importRadarConfig(dataPath)
+    
+    awake_rates = []
+    rateLen = int(radarConfig.frame_rate_Hz * plotRange)    # how much data to use for calculation
+    for ofs in range(0, distCount-rateLen, rateLen//2):
+        # select part of data to calculate rates
+        rateData = distData[ofs:ofs+rateLen,:]
+
+        #grab timestamps
+        window_timestamp = distData[ofs, 0]
+
+        # calculate rates from selected data
+        breath_heart_rate = calcRates(radarConfig, rateData, AWAKE_BREATH_BAND, AWAKE_HEART_BAND)
+        # append calculated rates to list
+        awake_rates.append({
+            "Timestamp_s": window_timestamp,
+            "Breathing_Rate_BPM": breath_heart_rate['Breathrate'],
+            "Heart_Rate_BPM": breath_heart_rate['Heartrate']
+       })
+    # return list of calculated rates
+    return awake_rates
+
+
 if __name__ == '__main__':
-    rates = calcRatesOverTime(radarFilePaths[1], PLOT_RANGE)
-    rates_df = pd.Dataframe.from_dict(rates) 
-    rates_df.to_csv(radarFilePaths[1] + "rates.csv") #save rates to a csv 
+    rates = calcRatesOverTime(radarFilePaths[1], PLOT_RANGE) 
+    rates_df = pd.DataFrame.from_dict(rates) 
+    rates_df.to_csv(radarFilePaths[1] + "rates.csv") #save rates to a csv
+
+    awake_rates = calcRatesOverTimeAwake(radarFilePaths[1], PLOT_RANGE) 
+    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    awake_rates_df.to_csv(radarFilePaths[1] + "awake_rates.csv") #save rates to a csv 
     #plotDistData(radarFilePaths[1], True) 
     #plotDistData(radarFilePaths[4], True) #which of the two should be plotted
    # plotDistData(radarFilePaths[6], True)
     # for path in radarFilePaths: plotDistData(path, True)
+
 
 
