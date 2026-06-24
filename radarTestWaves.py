@@ -16,9 +16,9 @@ USE_FFT_FILT    = False
 
 # filter frequencies for hibernating hedgehog
 MIN_LOW_FREQ_HIB   = 0.5 #for breathing
-MAX_LOW_FREQ_HIB    = 10 #should decrease from 14
+MAX_LOW_FREQ_HIB    = 5 #should decrease from 14
 MIN_HIGH_FREQ_HIB  = 2 #for heart rate
-MAX_HIGH_FREQ_HIB  = 25 
+MAX_HIGH_FREQ_HIB  = 20 
 
 #normal, for arousals
 NORMAL_LOW_FREQ_MIN   = 10 #for breathing
@@ -160,7 +160,6 @@ def plotDistData(dataPath:str, savePlot:bool = False):
 
     radarConfig     = importRadarConfig(dataPath)
     framesPerMinute    = radarConfig.frame_rate_Hz * 60
-    print("> Frames-per-minute : ", framesPerMinute)
 
     plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 30sec
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
@@ -198,6 +197,9 @@ def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list
     heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
     
     return {'Breathrate':breathRate, 'Heartrate':heartRate }
+
+
+
 
 def calcRatesOverTime(dataPath:str, plotRange:int):
     """
@@ -263,14 +265,25 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
 
         #grab timestamps
         window_timestamp = distData[ofs, 0]
+        displacement = rateData[:, 1]
 
+        # AROUSAL DETECTION FOR THIS WINDOW 
+        window_std = np.std(displacement)
+        is_aroused = window_std > AROUSAL_THRESHOLD
+
+        if is_aroused:
+            status = "awake/arousal state"
+        else:
+            status = "hibernating"
         # calculate rates from selected data
         breath_heart_rate = calcRates(radarConfig, rateData, AWAKE_BREATH_BAND, AWAKE_HEART_BAND)
         # append calculated rates to list
         awake_rates.append({
             "Timestamp_s": window_timestamp,
             "Breathing_Rate_BPM": breath_heart_rate['Breathrate'],
-            "Heart_Rate_BPM": breath_heart_rate['Heartrate']
+            "Heart_Rate_BPM": breath_heart_rate['Heartrate'],
+            "Arousal_Flag": status,
+            "Displacement_Std": window_std
        })
     # return list of calculated rates
     return awake_rates
@@ -279,14 +292,17 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
 if __name__ == '__main__':
     rates = calcRatesOverTime(radarFilePaths[1], PLOT_RANGE) 
     rates_df = pd.DataFrame.from_dict(rates) 
+    rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
     rates_df.to_csv(radarFilePaths[1] + "rates.csv") #save rates to a csv
 
     awake_rates = calcRatesOverTimeAwake(radarFilePaths[1], PLOT_RANGE) 
     awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
     awake_rates_df.to_csv(radarFilePaths[1] + "awake_rates.csv") #save rates to a csv 
-    #plotDistData(radarFilePaths[1], True) 
+    
+    plotDistData(radarFilePaths[1], True) 
     #plotDistData(radarFilePaths[4], True) #which of the two should be plotted
-   # plotDistData(radarFilePaths[6], True)
+    # plotDistData(radarFilePaths[6], True)
     # for path in radarFilePaths: plotDistData(path, True)
 
 
