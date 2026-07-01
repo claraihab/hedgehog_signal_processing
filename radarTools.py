@@ -9,6 +9,11 @@ import datetime as dt
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy as sp
+import scipy.signal as signal
+
+
+
+PLOT_COLORS = ['blue', 'red']
 
 MAX_PLOT_BPM_HIB   = 70 
 MAX_PLOT_BPM    = 200
@@ -18,47 +23,84 @@ WEIGHTED_PAEK_FIND  = False
 def normalize(data:np.ndarray) -> np.ndarray:
     return (data - np.mean(data)) / np.std(data)
 
-def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, hibernate: bool = False, data_path:str = None):
+
+
+def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns:int = 1, legend:list=None, data_path:str = None, hibernate:bool = False):
+    """
+    plot a diagram with wave and spectrum from distData
+    :param distData:
+    :param framerate_Hz:
+    :param name:            diagram-title
+    :param dataColumns:     datacolumn(s) to plot, if None plot all columns of distData
+    :param legend:          list of strings used as legend for plot
+    :param data_path:       path to save plot as PNG-file, ==None -> display plot
+    :return:
+    """
+    dataLen = distData.shape[0]
+    if dataColumns is None: # plot all dataColumns 1..
+        dataColumns = list( range(1,distData.shape[1]) )
+    elif type(dataColumns) ==int:
+        dataColumns = [dataColumns]
+
     timestamps  = distData[:,0]
     timestamps  = timestamps - timestamps[0]    # make tiemstamps start with 0
-    distances   = distData[:,1]  * 1000        # convert to mm
 
-    distWindowed= distances * sp.signal.get_window(window='blackman', Nx=len(distances))
-    distNorm    = normalize(distWindowed)
-    spectrum    = sp.fft.rfft(distNorm)
-    specAbs     = np.abs(spectrum)
-    specFreq    = sp.fft.rfftfreq(len(distances), 1/(framerate_Hz*60))  # display frequencies in 1/min
+    peakFreq = []
+    specs = []
 
-    # find peak freq
-    if WEIGHTED_PAEK_FIND:
-        weights = np.array(range(len(specAbs)), dtype=np.float64)
-        weights[0] = 9e20  # make weight[0] very big to remove DC-Part
-        weighted = spectrum / weights
-        peakIdx = np.argmax(weighted)
-    else :
+    specFreq = sp.fft.rfftfreq(dataLen, 1 / (framerate_Hz * 60))  # display frequencies in 1/min
+
+    # detect peak frequencies
+    distances = distData[:,dataColumns].copy() * 1000
+
+    for col in range(len(dataColumns)):
+        distNorm = normalize(distances[:,col])
+        distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
+        spectrum = sp.fft.rfft(distWindowed)
+        spectrum[0] = 0 # suppress DC component
+        specAbs = np.abs(spectrum)
         peakIdx = np.argmax(specAbs)
-    peakFreq = specFreq[peakIdx]
+        # append results to lists
+        specs.append(specAbs)
+        peakFreq.append(specFreq[peakIdx])
 
+    # scale FFT results into 0..1.0
+    fftMax = 1e-20  # very small value greater zero
+    for spec in specs: fftMax = max(fftMax, np.max(spec))
+    for idx in range(len(specs)):  specs[idx] = specs[idx] / fftMax
 
     # limit FFT-result to reasonable range 0-200 BPM
-    if hibernate:
-        maxFFTidx = int(MAX_PLOT_BPM_HIB * len(distances) * 1/(framerate_Hz*60))
-    else:
-        maxFFTidx = int(MAX_PLOT_BPM * len(distances) * 1/(framerate_Hz*60))
+    maxFFTidx = int(MAX_PLOT_BPM * len(distances) / (framerate_Hz * 60) ) +1
+    print(f"MAX_PLOT_BPM = {MAX_PLOT_BPM} -> maxFFTidx = {maxFFTidx}")
+    if maxFFTidx >100: maxFFTidx = 100
 
+    if legend is None:
+        labels = [None] * len(dataColumns)
+    else:
+        labels = legend
 
     fig, (ax_dist, ax_spec) = plt.subplots(2, 1, figsize=(15, 8), sharex=False)
+    fig.suptitle(name)
 
-    ax_dist.plot(timestamps, distances, color='purple')
+
     ax_dist.grid(True)
-    ax_dist.set_title(f"relative distance in mm")
+    ax_dist.set_title(f"relative distance")
 
-    ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color='orange') 
     ax_spec.grid(True)
     ax_spec.set_title("spectrum in 1/min")
-    ax_spec.axvline(peakFreq, color='orange', linestyle=":")
 
-    fig.suptitle(name)
+    for col in range(len(dataColumns)):
+        plotColor = PLOT_COLORS[col % len(PLOT_COLORS)]
+        ax_dist.plot(timestamps, distances[:,col], color=plotColor, label=labels[col])
+        specAbs = specs[col]
+        ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color=plotColor, label=labels[col])
+        if peakFreq[col] <MAX_PLOT_BPM:
+            ax_spec.axvline(peakFreq[col], color=plotColor, linestyle=":")
+            ax_spec.annotate(f'{peakFreq[col]:6.2f}', (peakFreq[col], 0))  #important
+
+    if legend is not None:
+        ax_dist.legend(loc='upper right')
+        ax_spec.legend(loc='upper right')
 
     if data_path is not None:
         plt.tight_layout()
@@ -68,6 +110,7 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, hibernate: 
         plt.show()
 
     return peakFreq
+
 
 
 
