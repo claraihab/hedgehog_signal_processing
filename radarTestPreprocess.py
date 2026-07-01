@@ -3,7 +3,6 @@ test the preprocessing of radarLib
 '''
 
 import radarLib
-
 from radarLib import *
 from radarTools import *
 from radarTestDefs import *
@@ -74,8 +73,8 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
 if __name__ == '__main__':
     radarLib.radarLib_verbose    = True     # radarLib should print progress info
 
-    dataPath = radarFilePaths[1]
-    distance = radarDistances[1]
+    dataPath = radarFilePaths3[0]
+    distance = radarDistances3[0]
     runPreprocess(dataPath, distance, altCalculation=False)
     runDistCalc(dataPath, altCalculation=False)
     
@@ -90,3 +89,17 @@ if __name__ == '__main__':
         runPreprocess(dataPath, distance)
         runDistCalc(dataPath)
     '''
+
+
+
+if __name__ == '__main__':
+    radarLib.radarLib_verbose    = True     # radarLib should print progress info
+
+    dataPath = radarFilePaths2[0]
+    distance = radarDistances2[0]
+    runPreprocess(dataPath, distance, altCalculation=False)
+    runDistCalc(dataPath, altCalculation=False)
+    
+    runPreprocess(dataPath, distance, altCalculation=True)
+    runDistCalc(dataPath, altCalculation=True)
+
