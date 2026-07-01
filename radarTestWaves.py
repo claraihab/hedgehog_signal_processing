@@ -5,26 +5,28 @@
 import os
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-PLOT_RANGE      = 600    #how much data to plot in s
+PLOT_RANGE      = 30    #how much data to plot in s
+
 USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
-USE_FFT_FILT    = False
+USE_FFT_FILT    = False 
 
 # filter frequencies for hibernating hedgehog
-MIN_LOW_FREQ_HIB   = 0.5 #for breathing
+MIN_LOW_FREQ_HIB   = 0.2 #for breathing
 MAX_LOW_FREQ_HIB    = 5 #should decrease from 14
 MIN_HIGH_FREQ_HIB  = 2 #for heart rate
 MAX_HIGH_FREQ_HIB  = 20 
 
-#normal, for arousals
+#normal, for dog or arousals
 NORMAL_LOW_FREQ_MIN   = 10 #for breathing
 NORMAL_LOW_FREQ_MAX = 50
 NORMAL_HIGH_FREQ_MIN  = 60 #for heart rate
-NORMAL_HIGH_FREQ_MAX   = 280
+NORMAL_HIGH_FREQ_MAX   = 180
 
 HIB_BREATH_BAND = [MIN_LOW_FREQ_HIB, MAX_LOW_FREQ_HIB]     
 HIB_HEART_BAND = [MIN_HIGH_FREQ_HIB, MAX_HIGH_FREQ_HIB]   
@@ -32,8 +34,6 @@ HIB_HEART_BAND = [MIN_HIGH_FREQ_HIB, MAX_HIGH_FREQ_HIB]
 AWAKE_BREATH_BAND  = [NORMAL_LOW_FREQ_MIN, NORMAL_LOW_FREQ_MAX] 
 AWAKE_HEART_BAND  = [NORMAL_HIGH_FREQ_MIN, NORMAL_HIGH_FREQ_MAX]  
 
-# Define an arousal threshold (variance of displacement)
-AROUSAL_THRESHOLD = 0.05 
 
 def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
@@ -42,11 +42,11 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
         name_suffix = ''
 
     frames_per_min = radarConfig.frame_rate_Hz * 60 
-    print(frames_per_min)
+    #print(frames_per_min)
 
     plotDataLow = plotData.copy()
     # bandpass-filter for breathrate
-    plotDataLow[:,1]  = filterData(plotDataLow[:,1], HIB_BREATH_BAND[0], HIB_BREATH_BAND[1], frames_per_min, order=4 )
+    plotDataLow[:,1]  = filterData(plotDataLow[:,1], AWAKE_BREATH_BAND[0], AWAKE_BREATH_BAND[1], frames_per_min, order=4 )
     breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
     print("Breathrate : ", breathRate)
 
@@ -56,20 +56,25 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*3, Q=5, fs=frames_per_min)
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
     # filter for heartRate
-    plotDataHigh[:,1] = filterData(plotDataHigh[:,1], HIB_HEART_BAND[0], HIB_HEART_BAND[1], frames_per_min, order=4 )
+    plotDataHigh[:,1] = filterData(plotDataHigh[:,1], AWAKE_HEART_BAND[0], AWAKE_HEART_BAND[1], frames_per_min, order=4 )
     heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
     print('Heartrate : ', heartRate)
 
+    combinedData = np.column_stack((plotData[:, 0], plotDataLow[:, 1], plotDataHigh[:, 1])) #to plot both together
+    
     # plot all data
     if savePlot:
-        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, hibernate = True, data_path = dataPath)
-        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix, hibernate = True, data_path = dataPath)
-        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate'+name_suffix, hibernate = True, data_path = dataPath)
+       plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix, hibernate = False, data_path = dataPath)
+       plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix, hibernate = False, data_path = dataPath)
+       plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate'+name_suffix, hibernate = False, data_path = dataPath)
+       plotDistances(combinedData, radarConfig.frame_rate_Hz,"Heart and Respiration Rates"+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath)
+    
     else:
-        plotDistances(plotData, radarConfig.frame_rate_Hz,'full-spectrum', hibernate = True)
-        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate', hibernate = True)
-        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate', hibernate = True)
-
+        plotDistances(plotData, radarConfig.frame_rate_Hz,'full-spectrum', hibernate = False)
+        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate', hibernate = False)
+        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate', hibernate = False)
+        plotDistances(combinedData, radarConfig.frame_rate_Hz, 'heart-respiration', dataColumns=[1,2], legend=["Respiration","Heart"])
+    
 
 def FFTidx(freq:float, dataLen:int, fs:float):
     return int(freq * dataLen * (1/fs) ) +1
@@ -78,7 +83,8 @@ def FFTidx(freq:float, dataLen:int, fs:float):
 LOW_RATE_MAX    = 60
 HIGH_RATE_MIN   = LOW_RATE_MAX
 HIGH_RATE_MAX   = 150
-MAX_PLOT_BPM    = 200
+MAX_PLOT_BPM    = 280
+MAX_PLOT_BPM_HIB   = 70
 
 def plotDistDataChunkFFT(radarConfig:radarConfigData, plotData:np.ndarray, savePlot:bool = False, dataPath:str=None):
     if USE_ALT_DIST:
@@ -164,7 +170,11 @@ def plotDistData(dataPath:str, savePlot:bool = False):
     plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 30sec
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
     
-    for ofs in range(0, distCount-plotLen, plotLen//2):
+    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 30sec
+    
+    start_offset = int(framesPerMinute) #starting after first minute
+    
+    for ofs in range(start_offset, distCount - plotLen, plotLen // 2):
         plotData = distData[ofs:ofs+plotLen,:]
         if USE_FFT_FILT:
             plotDistDataChunkFFT(radarConfig, plotData, savePlot, dataPath)
@@ -224,12 +234,8 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
 
         # AROUSAL DETECTION FOR THIS WINDOW 
         window_std = np.std(displacement)
-        is_aroused = window_std > AROUSAL_THRESHOLD
-
-        if is_aroused:
-            status = "awake/arousal state"
-        else:
-            status = "hibernating"
+        
+        status = "hibernating"
             
         # calculate rates from selected data
         breath_heart_rate = calcRates(radarConfig, rateData, HIB_BREATH_BAND, HIB_HEART_BAND)
@@ -269,12 +275,9 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
 
         # AROUSAL DETECTION FOR THIS WINDOW 
         window_std = np.std(displacement)
-        is_aroused = window_std > AROUSAL_THRESHOLD
 
-        if is_aroused:
-            status = "awake/arousal state"
-        else:
-            status = "hibernating"
+        status = "awake/arousal state"
+        
         # calculate rates from selected data
         breath_heart_rate = calcRates(radarConfig, rateData, AWAKE_BREATH_BAND, AWAKE_HEART_BAND)
         # append calculated rates to list
@@ -289,21 +292,46 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
     return awake_rates
 
 
-if __name__ == '__main__':
-    rates = calcRatesOverTime(radarFilePaths[1], PLOT_RANGE) 
-    rates_df = pd.DataFrame.from_dict(rates) 
-    rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
-    rates_df.to_csv(radarFilePaths[1] + "rates.csv") #save rates to a csv
 
-    awake_rates = calcRatesOverTimeAwake(radarFilePaths[1], PLOT_RANGE) 
+#doggie so no hibernating rates
+if __name__ == '__main__':
+    awake_rates = calcRatesOverTimeAwake(radarFilePaths3[0], PLOT_RANGE) 
     awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
-    awake_rates_df.to_csv(radarFilePaths[1] + "awake_rates.csv") #save rates to a csv 
-    
-    plotDistData(radarFilePaths[1], True) 
+    awake_rates_csv_path = os.path.join(radarFilePaths3[0], "awake_rates.csv")
+    awake_rates_df.to_csv(awake_rates_csv_path)
+
+    plotDistData(radarFilePaths3[0], True) 
     #plotDistData(radarFilePaths[4], True) #which of the two should be plotted
     # plotDistData(radarFilePaths[6], True)
     # for path in radarFilePaths: plotDistData(path, True)
 
 
 
+#hedgehog is awake so no hibernating rates
+if __name__ == '__main__':
+    awake_rates = calcRatesOverTimeAwake(radarFilePaths2[0], PLOT_RANGE) 
+    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    awake_rates_csv_path = os.path.join(radarFilePaths2[0], "awake_rates.csv")
+    awake_rates_df.to_csv(awake_rates_csv_path)
+
+    plotDistData(radarFilePaths2[0], True) 
+    
+
+## plot both lines at the same time
+#30 seconds for dog ()
+#representative data - 3 arousals, 3 hibernating, 1 awake (hedgehog)
+#model includes all ()
+
+
+##for hibernating hedgehog, includes timestamps
+
+if __name__ == '__main__':
+    rates = calcRatesOverTime(radarFilePaths1[0], PLOT_RANGE) 
+    rates_df = pd.DataFrame.from_dict(rates) 
+    rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+    rates_df.to_csv(radarFilePaths1[0] + "rates.csv") #save rates to a csv
+
+    awake_rates = calcRatesOverTimeAwake(radarFilePaths3[0], PLOT_RANGE) 
+    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
+    awake_rates_df.to_csv(radarFilePaths1[0] + "awake_rates.csv") #save rates to a csv 
