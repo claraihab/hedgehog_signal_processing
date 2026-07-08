@@ -12,20 +12,19 @@ import scipy as sp
 import scipy.signal as signal
 
 
-
-PLOT_COLORS = ['blue', 'red']
+PLOT_COLORS = ['cornflowerblue', 'firebrick']
 
 MAX_PLOT_BPM_HIB   = 70 
-MAX_PLOT_BPM    = 200
+MAX_PLOT_BPM    = 280 
 
-WEIGHTED_PAEK_FIND  = False
+WEIGHTED_PEAK_FIND  = False
 
 def normalize(data:np.ndarray) -> np.ndarray:
     return (data - np.mean(data)) / np.std(data)
 
 
 
-def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns:int = 1, legend:list=None, data_path:str = None, hibernate:bool = False):
+def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns:int = 1, legend:list=None, data_path:str = None):
     """
     plot a diagram with wave and spectrum from distData
     :param distData:
@@ -168,7 +167,7 @@ def plotMovements(data_path: str, name: str, distance_data: np.ndarray):
     # get series from data
     v_timestamps = distance_data[:0]
     v_heart_move = distance_data[:1]
-    v_breat_move = distance_data[:2]
+    v_breath_move = distance_data[:2]
     
     # convert timestamps to date-time
     v_datetime = [dt.datetime.fromtimestamp(t) for t in v_timestamps]
@@ -178,7 +177,7 @@ def plotMovements(data_path: str, name: str, distance_data: np.ndarray):
     ax_ah.plot(v_datetime, v_heart_move, color='purple', marker='o', markersize=2, linestyle='-')
     ax_ah.set_title(f"fast movements in mm")
     
-    ax_ab.plot(v_datetime, v_breat_move, color='orange', linewidth=0.8)
+    ax_ab.plot(v_datetime, v_breath_move, color='orange', linewidth=0.8)
     ax_ab.set_title("slow movements in mm")
     
     plt.tight_layout()
@@ -203,7 +202,7 @@ def plotFFTdata(data_path: str, name: str, FFT_data: np.ndarray, timebase:float)
         ax.plot(FFT_freq, FFT_data, color='black')
     else:
         FFT_mean = np.mean(FFT_data, axis=1)
-        FFT_count = FFT_data.shape(0)
+        FFT_count = FFT_data.shape[0]
         for i in range(FFT_count):
             ax.plot(FFT_freq, FFT_data[i,:], color=0.5)
         ax.plot(FFT_freq, FFT_mean, color='black')
@@ -212,7 +211,3 @@ def plotFFTdata(data_path: str, name: str, FFT_data: np.ndarray, timebase:float)
     plt.tight_layout()
     plt.savefig(os.path.join(data_path, f"fft_plot_{name}.png"), dpi=150)
     plt.close(fig)
-
-
-
-
