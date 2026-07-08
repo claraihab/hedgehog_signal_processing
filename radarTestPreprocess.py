@@ -7,7 +7,10 @@ from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-maxFrame    = None
+#maxFrame    = 275000 #for hibernating hedgehog
+maxFrame = None ##for dog and awake hedgehog
+
+
 def runPreprocess(dataPath:str, distance:float, altCalculation:bool=False):
     '''
     run preProcessing for one radar recording and create one file with phase vaues and one with the norm distance values
@@ -69,9 +72,11 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
         np.save(dataPath + "/radar_distance_alt.npy", distanceData)
 
 
+## PRE-PROCESSING STARTS HERE
 
+#processing for dog 
 if __name__ == '__main__':
-    radarLib.radarLib_verbose    = True     # radarLib should print progress info
+    radarLib.radarLib_verbose    = True  
 
     dataPath = radarFilePaths3[0]
     distance = radarDistances3[0]
@@ -92,14 +97,54 @@ if __name__ == '__main__':
 
 
 
-if __name__ == '__main__':
-    radarLib.radarLib_verbose    = True     # radarLib should print progress info
+#processing for awake hedgehogs
 
-    dataPath = radarFilePaths2[0]
-    distance = radarDistances2[0]
+for file_path, distance in zip(radarFilePaths2, radarDistances2):
+    
+    print(f"Processing hedgehog data at: {file_path}")
+    print(f"Using radar distance: {distance}")
+    runPreprocess(file_path, distance, altCalculation=False)
+    runDistCalc(file_path, altCalculation=False)
+    
+    runPreprocess(file_path, distance, altCalculation=True)
+    runDistCalc(file_path, altCalculation=True)
+    
+
+# if __name__ == '__main__':
+#     radarLib.radarLib_verbose    = True     # radarLib should print progress info
+
+#     dataPath = radarFilePaths2[0]
+#     distance = radarDistances2[0]
+#     runPreprocess(dataPath, distance, altCalculation=False)
+#     runDistCalc(dataPath, altCalculation=False)
+    
+#     runPreprocess(dataPath, distance, altCalculation=True)
+#     runDistCalc(dataPath, altCalculation=True)
+
+
+
+# loop for hibernating hedgehogs 
+for dataPath, distance in zip(radarFilePaths1, radarDistances1): 
+    print(f"\nProcessing file: {dataPath}")  
+        
+# Run standard calculation (False)
     runPreprocess(dataPath, distance, altCalculation=False)
     runDistCalc(dataPath, altCalculation=False)
-    
+        
+# Run alternative calculation (True)
     runPreprocess(dataPath, distance, altCalculation=True)
     runDistCalc(dataPath, altCalculation=True)
+
+
+#arousal data
+# if __name__ == '__main__':
+#     radarLib.radarLib_verbose    = True  
+
+#     dataPath = radarFilePaths4[1]
+#     distance = radarDistances4[1]
+#     runPreprocess(dataPath, distance, altCalculation=False)
+#     runDistCalc(dataPath, altCalculation=False)
+    
+#     runPreprocess(dataPath, distance, altCalculation=True)
+#     runDistCalc(dataPath, altCalculation=True)
 
