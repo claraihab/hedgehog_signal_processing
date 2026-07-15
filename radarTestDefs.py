@@ -7,7 +7,7 @@ radarFilePaths1 = sorted(
     str(p)
     for p in base.glob("recording_*/RadarIfxBGT60TR13C_*")
 )
-radarDistances1 = [0.40] * len(radarFilePaths1) #distances need to be changed..
+radarDistances1 = [0.49] * len(radarFilePaths1) #distances need to be changed..
 
 
 #awake hedgehogs

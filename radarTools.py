@@ -15,7 +15,7 @@ import scipy.signal as signal
 PLOT_COLORS = ['cornflowerblue', 'firebrick']
 
 MAX_PLOT_BPM_HIB   = 70 
-MAX_PLOT_BPM    = 280 
+MAX_PLOT_BPM    = 300 
 
 WEIGHTED_PEAK_FIND  = False
 
