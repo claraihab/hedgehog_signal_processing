@@ -11,6 +11,7 @@ from radarTools import *
 from radarTestDefs import *
 
 PLOT_RANGE      = 30   #how much data to plot in s
+PLOT_RANGE_HIB = 180
 USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
 USE_FFT_FILT    = False 
@@ -23,9 +24,9 @@ MAX_HIGH_FREQ_HIB  = 20
 
 #normal, for dog or arousals
 NORMAL_LOW_FREQ_MIN   = 10 #for breathing
-NORMAL_LOW_FREQ_MAX = 50
-NORMAL_HIGH_FREQ_MIN  = 60 #for heart rate
-NORMAL_HIGH_FREQ_MAX   = 250
+NORMAL_LOW_FREQ_MAX = 80
+NORMAL_HIGH_FREQ_MIN  = 120 #for heart rate
+NORMAL_HIGH_FREQ_MAX   = 250 
 
 HIB_BREATH_BAND = [MIN_LOW_FREQ_HIB, MAX_LOW_FREQ_HIB]     
 HIB_HEART_BAND = [MIN_HIGH_FREQ_HIB, MAX_HIGH_FREQ_HIB]   
@@ -66,7 +67,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix,  data_path = dataPath)
        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix,  data_path = dataPath)
        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate'+name_suffix,  data_path = dataPath)
-       plotDistances(combinedData, radarConfig.frame_rate_Hz,"Hedgehog Heart and Respiration Rates"+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath)
+       plotDistances(combinedData, radarConfig.frame_rate_Hz,"Arousal State: Hedgehog Heart and Respiration Rates"+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath)
 
     else:
         plotDistances(plotData, radarConfig.frame_rate_Hz,'full-spectrum')
@@ -171,11 +172,10 @@ def plotDistData(dataPath: str, savePlot: bool = False):
     else:
         print(f"Warning: File is shorter than 10s. Plotting as-is.")
     
-    distCount = distData.shape[0]
+    distCount = distData.shape[0] #9565
     print("> Distance values : ", distCount)
 
-    frames_per_minute = int(radarConfig.frame_rate_Hz * 60)
-    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        # plot data for 30sec
+    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
 
     # Run the sliding window loop safely
@@ -312,9 +312,10 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
     # plotDistData(radarFilePaths[6], True)
     # for path in radarFilePaths: plotDistData(path, True)
 
-#hedgehog is awake so no hibernating rates (and no timestamps)
 
-# Loop through every directory path in list
+
+##hedgehog is awake so no hibernating rates (and no timestamps)
+##Loop through every directory path in list
 for data_path in radarFilePaths2:
 #     print(f"\nAnalyzing awake rates for: {data_path}")
         
@@ -324,17 +325,23 @@ for data_path in radarFilePaths2:
     awake_rates_df.to_csv(awake_rates_csv_path, index=False) 
     plotDistData(data_path, True)
 
-## loop for hibernating hedgehogs, includes timestamps
-#  for data_path in radarFilePaths1:
-#         rates = calcRatesOverTime(data_path, PLOT_RANGE) 
-#         rates_df = pd.DataFrame.from_dict(rates) 
-#         rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
-#         rates_df.to_csv(data_path + "rates.csv") 
+# loop for hibernating hedgehogs, includes timestamps
 
-#         awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
-#         awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-#         awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
-#         awake_rates_df.to_csv(data_path + "awake_rates.csv") 
+# for data_path in radarFilePaths1:
+#     rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
+#     rates_df = pd.DataFrame.from_dict(rates) 
+#     rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+#     rates_df.to_csv(data_path + "rates.csv") 
+#     plotDistData(data_path, True)
+
+
+#arousal loop
+for data_path in radarFilePaths1:
+    awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
+    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
+    awake_rates_df.to_csv(data_path + "awake_rates.csv")  
+    plotDistData(data_path, True)
 
 
 ## plot both lines at the same time
@@ -342,21 +349,6 @@ for data_path in radarFilePaths2:
 #representative data - 3 arousals, 3 hibernating, 1 awake (hedgehog)
 #model includes all ()
 
-#once for hibernating 
-#  for data_path in radarFilePaths1:
-#         rates = calcRatesOverTime(data_path, PLOT_RANGE) 
-#         rates_df = pd.DataFrame.from_dict(rates) 
-#         rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
-#         rates_df.to_csv(data_path + "rates.csv")
-#         plotDistData(data_path, True)
-
-#secondly for arousals 
-#         for data_path in radarFilePaths1:
-#         awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
-#         awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-#         awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
-#         awake_rates_df.to_csv(data_path + "awake_rates.csv") 
-#         plotDistData(data_path, True)
 
 
 # if __name__ == '__main__':
@@ -388,6 +380,60 @@ for data_path in radarFilePaths2:
 #     awake_rates_df.to_csv(awake_rates_csv_path)
    
 #     plotDistData(radarFilePaths4[1], True)
+
+
+    
+#updated processing ??
+
+# Loop for hibernating hedgehogs (5-minute averaging)
+
+for data_path in radarFilePaths1:
+    rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
+    rates_df = pd.DataFrame.from_dict(rates) 
+    
+    # Create the Datetime column
+    rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+    
+    # Set the Datetime column as the index (required for resampling)
+    rates_df.set_index("Timestamp_UTC", inplace=True)
+    
+    # Specify only the numeric columns to average 
+    numeric_cols = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"]
+    
+    # Resample to 5 minutes and calculate  mean
+    rates_5min_df = rates_df[numeric_cols].resample('5min').mean()
+    
+    # Save 
+    rates_5min_df.to_csv(data_path + "rates_5min.csv") 
+    
+    plotDistData(data_path, True)
+
+
+# Arousal loop 
+
+for data_path in radarFilePaths2:
+    awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
+    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    
+    # Create the Datetime column
+    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
+    
+    # Set Datetime as index
+    awake_rates_df.set_index("Timestamp_UTC", inplace=True)
+    
+    # Specify numeric columns
+    numeric_cols = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"]
+    
+    # Resample to 1 minute for awake data (to catch faster variations)
+    awake_rates_1min_df = awake_rates_df[numeric_cols].resample('1min').mean()
+    
+    # Save
+    awake_rates_1min_df.to_csv(data_path + "awake_rates_1min.csv")  
+    
+    plotDistData(data_path, True)
+
+
+
 
 
     
