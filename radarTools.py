@@ -12,10 +12,10 @@ import scipy as sp
 import scipy.signal as signal
 
 
-PLOT_COLORS = ['cornflowerblue', 'firebrick']
+PLOT_COLORS = ['blue', 'red']
 
-MAX_PLOT_BPM_HIB   = 70 
-MAX_PLOT_BPM    = 300 
+MAX_PLOT_BPM   = 70 
+#MAX_PLOT_BPM   = 300
 
 WEIGHTED_PEAK_FIND  = False
 
@@ -71,14 +71,13 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
     # limit FFT-result to reasonable range 0-200 BPM
     maxFFTidx = int(MAX_PLOT_BPM * len(distances) / (framerate_Hz * 60) ) +1
     print(f"MAX_PLOT_BPM = {MAX_PLOT_BPM} -> maxFFTidx = {maxFFTidx}")
-    if maxFFTidx >100: maxFFTidx = 100
 
     if legend is None:
         labels = [None] * len(dataColumns)
     else:
         labels = legend
 
-    fig, (ax_dist, ax_spec) = plt.subplots(2, 1, figsize=(15, 8), sharex=False)
+    fig, (ax_dist, ax_spec) = plt.subplots(2, 1, figsize=(15, 8), sharex=False, linewidth = 0.8, alpha = 0.5)
     fig.suptitle(name)
 
 
@@ -90,10 +89,10 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
 
     for col in range(len(dataColumns)):
         plotColor = PLOT_COLORS[col % len(PLOT_COLORS)]
-        ax_dist.plot(timestamps, distances[:,col], color=plotColor, label=labels[col])
+        ax_dist.plot(timestamps, distances[:,col], color=plotColor, label=labels[col], alpha = 0.5)
         specAbs = specs[col]
-        ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color=plotColor, label=labels[col])
-        if peakFreq[col] <MAX_PLOT_BPM:
+        ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color=plotColor, label=labels[col], alpha = 0.8)
+        if peakFreq[col] < MAX_PLOT_BPM:
             ax_spec.axvline(peakFreq[col], color=plotColor, linestyle=":")
             ax_spec.annotate(f'{peakFreq[col]:6.2f}', (peakFreq[col], 0))  #important
 
@@ -137,10 +136,10 @@ def plotRates(data_path:str, name:str, rate_data:np.ndarray):
 
     fig, (ax_ah, ax_ab) = plt.subplots(2, 1, figsize=(15, 8), sharex=True)
     
-    ax_ah.plot(v_datetime, v_heartrate, color='purple', marker='o', markersize=2, linestyle='-')
+    ax_ah.plot(v_datetime, v_heartrate, color='purple', marker='o', markersize=2, linestyle='-', linewidth=0.8, alpha=0.8)
     ax_ah.set_title(f"Heart-Rate in bpm")
     
-    ax_ab.plot(v_datetime, v_breathrate, color='orange', linewidth=0.8)
+    ax_ab.plot(v_datetime, v_breathrate, color='orange', linewidth=0.8, alpha=0.8)
     ax_ab.set_title("Breath-Rate in bpm")
 
     plt.tight_layout()
