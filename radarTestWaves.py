@@ -11,7 +11,7 @@ from radarTools import *
 from radarTestDefs import *
 
 PLOT_RANGE      = 30   #how much data to plot in s
-PLOT_RANGE_HIB = 180
+PLOT_RANGE_HIB = 300
 USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
 USE_FFT_FILT    = False 
@@ -23,10 +23,10 @@ MIN_HIGH_FREQ_HIB  = 2 #for heart rate
 MAX_HIGH_FREQ_HIB  = 20 
 
 #normal, for dog or arousals
-NORMAL_LOW_FREQ_MIN   = 10 #for breathing
-NORMAL_LOW_FREQ_MAX = 80
-NORMAL_HIGH_FREQ_MIN  = 120 #for heart rate
-NORMAL_HIGH_FREQ_MAX   = 250 
+NORMAL_LOW_FREQ_MIN   = 25 #for breathing
+NORMAL_LOW_FREQ_MAX = 50
+NORMAL_HIGH_FREQ_MIN  = 180 #for heart rate
+NORMAL_HIGH_FREQ_MAX   = 280 
 
 HIB_BREATH_BAND = [MIN_LOW_FREQ_HIB, MAX_LOW_FREQ_HIB]     
 HIB_HEART_BAND = [MIN_HIGH_FREQ_HIB, MAX_HIGH_FREQ_HIB]   
@@ -45,7 +45,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
 
     plotDataLow = plotData.copy()
     # bandpass-filter for breathrate
-    plotDataLow[:,1]  = filterData(plotDataLow[:,1], AWAKE_BREATH_BAND[0], AWAKE_BREATH_BAND[1], frames_per_min, order=4 )
+    plotDataLow[:,1]  = filterData(plotDataLow[:,1], HIB_BREATH_BAND[0], HIB_BREATH_BAND[1], frames_per_min, order=4 )
     breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
     print("Breathrate : ", breathRate)
 
@@ -55,7 +55,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*3, Q=5, fs=frames_per_min)
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
     # filter for heartRate
-    plotDataHigh[:,1] = filterData(plotDataHigh[:,1], AWAKE_HEART_BAND[0], AWAKE_HEART_BAND[1], frames_per_min, order=4 )
+    plotDataHigh[:,1] = filterData(plotDataHigh[:,1], HIB_HEART_BAND[0], HIB_HEART_BAND[1], frames_per_min, order=4 )
     heartRate = calcRate(plotDataHigh[:,1], radarConfig.frame_rate_Hz )
     print('Heartrate : ', heartRate)
 
@@ -67,7 +67,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix,  data_path = dataPath)
        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix,  data_path = dataPath)
        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate'+name_suffix,  data_path = dataPath)
-       plotDistances(combinedData, radarConfig.frame_rate_Hz,"Arousal State: Hedgehog Heart and Respiration Rates"+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath)
+       plotDistances(combinedData, radarConfig.frame_rate_Hz,"Hibernating Hedgehog Heart and Respiration Rates"+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath)
 
     else:
         plotDistances(plotData, radarConfig.frame_rate_Hz,'full-spectrum')
@@ -150,6 +150,7 @@ def plotDistData(dataPath: str, savePlot: bool = False):
     if USE_ALT_DIST:
         if USE_ALT_PHASE:
             dataFilename = os.path.join(dataPath, "radar_distance2_alt.npy")
+            
         else:
             dataFilename = os.path.join(dataPath, "radar_distance_alt.npy")
     else:
@@ -175,7 +176,7 @@ def plotDistData(dataPath: str, savePlot: bool = False):
     distCount = distData.shape[0] #9565
     print("> Distance values : ", distCount)
 
-    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE)        
+    plotLen = int(radarConfig.frame_rate_Hz * PLOT_RANGE_HIB)        
     ofs =  (distCount - plotLen) //2    # for testing get data from the middle
 
     # Run the sliding window loop safely
@@ -223,7 +224,7 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
     :param plotRange:   how much time to use for the calculation
     :return:    a list with breathrates and heartrates
     """
-    dataFilename = dataPath + "/radar_distance_alt.npy"  # os.path.join(path,"radar_distance_alt.npy")
+    dataFilename = os.path.join(dataPath, "radar_distance_alt.npy")
     distData        = np.load(dataFilename)
     distCount       = distData.shape[0]
     radarConfig     = importRadarConfig(dataPath)
@@ -316,34 +317,38 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
 
 ##hedgehog is awake so no hibernating rates (and no timestamps)
 ##Loop through every directory path in list
-for data_path in radarFilePaths2:
-#     print(f"\nAnalyzing awake rates for: {data_path}")
+# for data_path in radarFilePaths2:
+# #     print(f"\nAnalyzing awake rates for: {data_path}")
         
-    awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
-    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-    awake_rates_csv_path = os.path.join(data_path, "awake_rates.csv")
-    awake_rates_df.to_csv(awake_rates_csv_path, index=False) 
-    plotDistData(data_path, True)
+#     awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
+#     awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+#     awake_rates_csv_path = os.path.join(data_path, "awake_rates.csv")
+#     awake_rates_df.to_csv(awake_rates_csv_path, index=False) 
+#     plotDistData(data_path, True)
 
 # loop for hibernating hedgehogs, includes timestamps
 
 # for data_path in radarFilePaths1:
-#     rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
-#     rates_df = pd.DataFrame.from_dict(rates) 
-#     rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
-#     rates_df.to_csv(data_path + "rates.csv") 
-#     plotDistData(data_path, True)
-
+#     try:
+#         rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
+#         rates_df = pd.DataFrame.from_dict(rates) 
+#         rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+#         rates_df.to_csv(os.path.join(data_path, "rates.csv"), index=False)
+#         plotDistData(data_path, True)
+#     except:
+#         print("No pre-processed file found in dir:", data_path)
 
 #arousal loop
-for data_path in radarFilePaths1:
-    awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
-    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
-    awake_rates_df.to_csv(data_path + "awake_rates.csv")  
-    plotDistData(data_path, True)
-
-
+# for data_path in radarFilePaths1:
+#     try:
+#         awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
+#         awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+#         awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
+#         awake_rates_df.to_csv(data_path + "awake_rates.csv")  
+#         plotDistData(data_path, True)
+#     except:
+#         print("No pre-processed file found in dir:", data_path)
+   
 ## plot both lines at the same time
 #30 seconds for dog ()
 #representative data - 3 arousals, 3 hibernating, 1 awake (hedgehog)
@@ -351,89 +356,30 @@ for data_path in radarFilePaths1:
 
 
 
-# if __name__ == '__main__':
-
-#     rates = calcRatesOverTime(radarFilePaths4[0], PLOT_RANGE) 
-#     rates_df = pd.DataFrame.from_dict(rates) 
-#     rates_csv_path = os.path.join(radarFilePaths4[0], "rates.csv")
-#     rates_df.to_csv(rates_csv_path)
-
-#     plotDistData(radarFilePaths4[0], True)
-
-
-# if __name__ == '__main__':
-
-#     awake_rates = calcRatesOverTimeAwake(radarFilePaths4[0], PLOT_RANGE) 
-#     awake_rates_df = pd.DataFrame.from_dict(rates) 
-#     awake_rates_csv_path = os.path.join(radarFilePaths4[0], "awake_rates.csv")
-#     awake_rates_df.to_csv(awake_rates_csv_path)
-
-#     plotDistData(radarFilePaths4[0], True)
-
-
-
-# if __name__ == '__main__':
-
-#     awake_rates = calcRatesOverTimeAwake(radarFilePaths4[1], PLOT_RANGE) 
-#     awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-#     awake_rates_csv_path = os.path.join(radarFilePaths4[1], "awake_rates.csv")
-#     awake_rates_df.to_csv(awake_rates_csv_path)
-   
-#     plotDistData(radarFilePaths4[1], True)
-
-
-    
-#updated processing ??
-
-# Loop for hibernating hedgehogs (5-minute averaging)
+SMOOTH_NUMBER = 3
 
 for data_path in radarFilePaths1:
+    
     rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
+
+    # Create DataFrame and format timestamp
     rates_df = pd.DataFrame.from_dict(rates) 
-    
-    # Create the Datetime column
     rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+
+    rates_df.to_csv(data_path / "rates_5min.csv", index=False) 
+
+    # Smooth data using rolling mean
+    rates_smooth_df = rates_df.copy()
+    cols_to_smooth = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"] 
     
-    # Set the Datetime column as the index (required for resampling)
-    rates_df.set_index("Timestamp_UTC", inplace=True)
+    for col in cols_to_smooth:
+        rates_smooth_df[col] = rates_df[col].rolling(window=SMOOTH_NUMBER).mean() 
+
+    # Drop the initial NaN values created by the window shift
+    rates_smooth_df = rates_smooth_df.dropna().reset_index(drop=True)
+
+    # Save smoothed CSV directly into the folder
+    rates_smooth_df.to_csv(data_path / "rates_5min_smooth.csv", index=False) 
     
-    # Specify only the numeric columns to average 
-    numeric_cols = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"]
-    
-    # Resample to 5 minutes and calculate  mean
-    rates_5min_df = rates_df[numeric_cols].resample('5min').mean()
-    
-    # Save 
-    rates_5min_df.to_csv(data_path + "rates_5min.csv") 
-    
+    # Plot data
     plotDistData(data_path, True)
-
-
-# Arousal loop 
-
-for data_path in radarFilePaths2:
-    awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE) 
-    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-    
-    # Create the Datetime column
-    awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
-    
-    # Set Datetime as index
-    awake_rates_df.set_index("Timestamp_UTC", inplace=True)
-    
-    # Specify numeric columns
-    numeric_cols = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"]
-    
-    # Resample to 1 minute for awake data (to catch faster variations)
-    awake_rates_1min_df = awake_rates_df[numeric_cols].resample('1min').mean()
-    
-    # Save
-    awake_rates_1min_df.to_csv(data_path + "awake_rates_1min.csv")  
-    
-    plotDistData(data_path, True)
-
-
-
-
-
-    

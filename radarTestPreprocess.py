@@ -2,12 +2,12 @@
 test the preprocessing of radarLib
 '''
 
-import radarLib
+
 from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-maxFrame = None 
+maxFrame = 400000
 
 
 def runPreprocess(dataPath:str, distance:float, altCalculation:bool=False):
@@ -117,11 +117,17 @@ for dataPath, distance in zip(radarFilePaths1, radarDistances1):
     print(f"\nProcessing file: {dataPath}")  
         
 # Run standard calculation (False)
-    runPreprocess(dataPath, distance, altCalculation=False)
-    runDistCalc(dataPath, altCalculation=False)
-        
+    try: 
+        runPreprocess(dataPath, distance, altCalculation=False)
+        runDistCalc(dataPath, altCalculation=False)
+    except: 
+        print("Error in dir:", dataPath)
+    
 # Run alternative calculation (True)
-    runPreprocess(dataPath, distance, altCalculation=True)
-    runDistCalc(dataPath, altCalculation=True)
+    try:
+        runPreprocess(dataPath, distance, altCalculation=True)
+        runDistCalc(dataPath, altCalculation=True)
+    except: 
+        print("Error in dir:", dataPath)
 
 
