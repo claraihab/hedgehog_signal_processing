@@ -62,7 +62,7 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, savePlot
     combinedData = np.column_stack((plotData[:, 0], plotDataLow[:, 1], plotDataHigh[:, 1])) #to plot both together
     
     # plot all data
-    #
+    
     if savePlot:
        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix,  data_path = dataPath)
        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix,  data_path = dataPath)
@@ -203,6 +203,7 @@ def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list
     # bandpass-filter for breathrate
     plotDataLow[:,1]  = filterData(plotDataLow[:,1], breathRange[0], breathRange[1], frames_per_min, order=4 )
     breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
+    breathStd = np.std(plotDataLow[:,1]) #Standard Deviation of Respiration Signal
 
     plotDataHigh = distData.copy()
     # remove harmonics of breathrate
@@ -212,9 +213,14 @@ def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list
     # filter for heartRate
     plotDataHigh[:,1] = filterData(plotDataHigh[:,1],heartRange[0], heartRange[1], frames_per_min, order=4 )
     heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
-    
-    return {'Breathrate':breathRate, 'Heartrate':heartRate }
+    heartStd = np.std(plotDataHigh[:,1]) #Standard Deviation of Heart Signal
 
+    return {
+        'Breathrate': breathRate, 
+        'Heartrate': heartRate,
+        'BreathStd': breathStd,
+        'HeartStd': heartStd
+    }
 
 
 def calcRatesOverTime(dataPath:str, plotRange:int):
@@ -249,6 +255,8 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
             "Timestamp_s": window_timestamp,
             "Breathing_Rate_BPM": breath_heart_rate['Breathrate'],
             "Heart_Rate_BPM": breath_heart_rate['Heartrate'],
+            "Breathing_Std": breath_heart_rate['BreathStd'],      # Added 
+            "Heart_Std": breath_heart_rate['HeartStd'],          
             "Arousal_Flag": status,
             "Displacement_Std": window_std
             })
@@ -292,6 +300,8 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
             "Timestamp_s": window_timestamp,
             "Breathing_Rate_BPM": breath_heart_rate['Breathrate'],
             "Heart_Rate_BPM": breath_heart_rate['Heartrate'],
+            "Breathing_Std": breath_heart_rate['BreathStd'],     
+            "Heart_Std": breath_heart_rate['HeartStd'],        
             "Arousal_Flag": status,
             "Displacement_Std": window_std
        })
@@ -326,17 +336,19 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
 #     awake_rates_df.to_csv(awake_rates_csv_path, index=False) 
 #     plotDistData(data_path, True)
 
-# loop for hibernating hedgehogs, includes timestamps
+## LOOP for hibernating hedgehogs, includes timestamps
+SMOOTH_NUMBER = 3
 
-# for data_path in radarFilePaths1:
-#     try:
-#         rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
-#         rates_df = pd.DataFrame.from_dict(rates) 
-#         rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
-#         rates_df.to_csv(os.path.join(data_path, "rates.csv"), index=False)
-#         plotDistData(data_path, True)
-#     except:
-#         print("No pre-processed file found in dir:", data_path)
+for data_path in radarFilePaths1:
+    try:
+        rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
+        rates_df = pd.DataFrame.from_dict(rates) 
+        rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+        rates_df.to_csv(os.path.join(data_path, "rates.csv"), index=False)
+        plotDistData(data_path, True)
+    except:
+        print("No pre-processed file found in dir:", data_path)
+
 
 #arousal loop
 # for data_path in radarFilePaths1:
@@ -356,30 +368,29 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
 
 
 
-SMOOTH_NUMBER = 3
 
-for data_path in radarFilePaths1:
+# for data_path in radarFilePaths1:
     
-    rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
+#     rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB) 
 
-    # Create DataFrame and format timestamp
-    rates_df = pd.DataFrame.from_dict(rates) 
-    rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
+#     # Create DataFrame and format timestamp
+#     rates_df = pd.DataFrame.from_dict(rates) 
+#     rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
 
-    rates_df.to_csv(data_path / "rates_5min.csv", index=False) 
+#     rates_df.to_csv(os.path.join(data_path, "rates_5min.csv", index=False))
 
-    # Smooth data using rolling mean
-    rates_smooth_df = rates_df.copy()
-    cols_to_smooth = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"] 
+#     # Smooth data using rolling mean
+#     rates_smooth_df = rates_df.copy()
+#     cols_to_smooth = ["Breathing_Rate_BPM", "Heart_Rate_BPM", "Displacement_Std"] 
     
-    for col in cols_to_smooth:
-        rates_smooth_df[col] = rates_df[col].rolling(window=SMOOTH_NUMBER).mean() 
+#     for col in cols_to_smooth:
+#         rates_smooth_df[col] = rates_df[col].rolling(window=SMOOTH_NUMBER).mean() 
 
-    # Drop the initial NaN values created by the window shift
-    rates_smooth_df = rates_smooth_df.dropna().reset_index(drop=True)
+#     # Drop the initial NaN values created by the window shift
+#     rates_smooth_df = rates_smooth_df.dropna().reset_index(drop=True)
 
-    # Save smoothed CSV directly into the folder
-    rates_smooth_df.to_csv(data_path / "rates_5min_smooth.csv", index=False) 
+#     # Save smoothed CSV directly into the folder
+#     rates_smooth_df.to_csv(os.path.join(data_path, "rates_5min_smooth.csv", index=False))
     
-    # Plot data
-    plotDistData(data_path, True)
+#     # Plot data
+#     plotDistData(data_path, True)
