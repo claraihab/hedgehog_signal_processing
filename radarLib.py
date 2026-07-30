@@ -21,7 +21,6 @@ ANGLES_NAME     = "radar_angles.npy"
 
 SPEED_OF_LIGHT = 300e6  # 300.000 km/s = 300.000.000 m/s
 
-
 radarLib_verbose    = False     # if set to True PreProcessRadarData will print some infos
 
 @dataclass
@@ -263,6 +262,8 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
     RX_ANTENNA = 0
 
     radarConfig, data, timestamps = importRadarData(dataPath)
+
+
     # create window-array by name
     if (window is not None) and (type(window) ==str):
         winSize = radarConfig.num_samples_per_chirp
@@ -300,10 +301,13 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
 
         phi = np.angle( frameFFT[FFTbin-1:FFTbin+2] )
 
+        #print("Timestamps shape/type:", type(timestamps), timestamps.shape)
         tmp =  np.insert(phi, 0, timestamps[frameNum])
+        # Temporary debug snippet to put right before line 304 in radarLib.py:
+        
         results[frameNum] = tmp
-    # unwrap phase values
     
+    # unwrap phase values
     results[:, 1:] = np.unwrap(results[:, 1:], axis=0) #alternative to exclude timestamps
 
     if radarLib_verbose:
@@ -417,51 +421,4 @@ def calcRate(distData:np.ndarray, framerate_Hz:float) -> float:
     peakFreq = specFreq[peakIdx]
     
     return peakFreq
-
-
-
-
-
-
-
-
-# unused !!!
-# ------------
-def findBaseFreq(FFT_data:np.ndarray, timebase:float, weighted:bool=True) ->float:
-    '''
-    find the 'base' frequency from FFT-data,
-    
-    :param FFT_data:
-    :param timebase:   length of the data (in s) used to calculate FFT
-    :param weighted:        if True -> FFT-values will be weighted by 1/n to favor low frequencies
-    :return:
-    '''
-    data = np.absolute(FFT_data)    # use absolute values,
-    data[0] = 0                     # set DC-component to zero
-    
-    if weighted:
-        for i in range(1, len(data)):
-            data[i] = data[i] /i
-    peak_idx = np.argmax(data)           # find highest peak
-    peak_hz  = peak_idx / timebase  # convert to hz
-    return peak_hz
-
-def maskFFTdata(FFT_data:np.ndarray,  timebase:float, min_Hz:float, max_Hz:float) -> float:
-    '''
-    return a numpy array where the values outside the range min-max are set to zero
-    :param FFT_data:
-    :param timebase:
-    :param min_Hz:
-    :param max_Hz:
-    :return:
-    '''
-    min_idx = int(min_Hz * timebase)
-    max_idx = int(max_Hz * timebase)
-
-    data = FFT_data.copy()  # reserve original data
-    if min_idx >0:
-        data[0:min_idx] = 0
-    if max_idx >0 and max_idx <=len(data):
-        data[max_idx:]  = 0
-    return data
 
