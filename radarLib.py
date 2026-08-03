@@ -415,6 +415,7 @@ def calcRate(distData:np.ndarray, framerate_Hz:float) -> float:
     distWindowed= distNorm * signal.get_window(window='blackman', Nx=len(distData))
     spectrum    = sp.fft.rfft( distWindowed )
     specAbs     = np.abs( spectrum )
+    specAbs[0]  = 0     # suppress DC / near-DC leakage so it can never win the argmax
     specFreq    = sp.fft.rfftfreq(len(distData), 1/(framerate_Hz*60))  # display frequencies in 1/min
 
     peakIdx = np.argmax(specAbs)
@@ -422,3 +423,36 @@ def calcRate(distData:np.ndarray, framerate_Hz:float) -> float:
     
     return peakFreq
 
+
+
+##peak to floor, signal to noise ratio
+
+def calcRateWithSNR(distData, framerate_Hz, exclude_bins=3):
+    distNorm = normalize(distData)
+    distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
+    spectrum = sp.fft.rfft(distWindowed)
+    specAbs = np.abs(spectrum)
+    specAbs[0] = 0  # suppress DC
+    specFreq = sp.fft.rfftfreq(len(distData), 1/(framerate_Hz*60))
+
+    peakIdx = np.argmax(specAbs)
+    peakFreq = specFreq[peakIdx]
+    peakPower = specAbs[peakIdx] ** 2
+
+    # noise floor = median power of everything EXCEPT a small window around the peak
+    # (excluding the peak's own bins keeps the floor estimate from being biased upward by the peak itself)
+    mask = np.ones(len(specAbs), dtype=bool)
+    lo, hi = max(0, peakIdx-exclude_bins), min(len(specAbs), peakIdx+exclude_bins+1)
+    mask[lo:hi] = False
+    noiseFloor = np.median(specAbs[mask] ** 2)
+
+    snr_dB = 10 * np.log10(peakPower / max(noiseFloor, 1e-30))
+
+    return {"rate": peakFreq, "snr_dB": snr_dB}
+
+
+
+from scipy.signal import find_peaks
+peaks, props = find_peaks(specAbs, prominence=0)
+best = peaks[np.argmax(props["prominences"])]
+prominence = props["prominences"][np.argmax(props["prominences"])]
