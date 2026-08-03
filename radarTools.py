@@ -14,9 +14,6 @@ import scipy.signal as signal
 
 PLOT_COLORS = ['blue', 'red']
 
-MAX_PLOT_BPM   = 70 
-#MAX_PLOT_BPM   = 300
-
 WEIGHTED_PEAK_FIND  = False
 
 def normalize(data:np.ndarray) -> np.ndarray:
@@ -24,7 +21,7 @@ def normalize(data:np.ndarray) -> np.ndarray:
 
 
 
-def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns:int = 1, legend:list=None, data_path:str = None):
+def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns:int = 1, legend:list=None, data_path:str = None, max_plot_bpm:float = None):
     """
     plot a diagram with wave and spectrum from distData
     :param distData:
@@ -33,8 +30,13 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
     :param dataColumns:     datacolumn(s) to plot, if None plot all columns of distData
     :param legend:          list of strings used as legend for plot
     :param data_path:       path to save plot as PNG-file, ==None -> display plot
+    :param max_plot_bpm:    upper bound (in 1/min) for the spectrum x-axis; defaults to module MAX_PLOT_BPM.
+                            Pass a higher value (e.g. 300) for awake/active recordings so the
+                            heart-rate peak (~180-280 bpm) isn't clipped off the plot.
     :return:
     """
+    if max_plot_bpm is None:
+        max_plot_bpm = MAX_PLOT_BPM
     dataLen = distData.shape[0]
     if dataColumns is None: # plot all dataColumns 1..
         dataColumns = list( range(1,distData.shape[1]) )
@@ -69,8 +71,8 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
     for idx in range(len(specs)):  specs[idx] = specs[idx] / fftMax
 
     # limit FFT-result to reasonable range 0-200 BPM
-    maxFFTidx = int(MAX_PLOT_BPM * len(distances) / (framerate_Hz * 60) ) +1
-    print(f"MAX_PLOT_BPM = {MAX_PLOT_BPM} -> maxFFTidx = {maxFFTidx}")
+    maxFFTidx = int(max_plot_bpm * len(distances) / (framerate_Hz * 60) ) +1
+    print(f"max_plot_bpm = {max_plot_bpm} -> maxFFTidx = {maxFFTidx}")
 
     if legend is None:
         labels = [None] * len(dataColumns)
@@ -92,7 +94,7 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
         ax_dist.plot(timestamps, distances[:,col], color=plotColor, label=labels[col], alpha = 0.5)
         specAbs = specs[col]
         ax_spec.plot(specFreq[:maxFFTidx], specAbs[:maxFFTidx], color=plotColor, label=labels[col], alpha = 0.8)
-        if peakFreq[col] < MAX_PLOT_BPM:
+        if peakFreq[col] < max_plot_bpm:
             ax_spec.axvline(peakFreq[col], color=plotColor, linestyle=":")
             ax_spec.annotate(f'{peakFreq[col]:6.2f}', (peakFreq[col], 0))  #important
 
@@ -127,9 +129,9 @@ def plotRates(data_path:str, name:str, rate_data:np.ndarray):
     :return:
     '''
     # get series from data
-    v_timestamps  = rate_data[:0]
-    v_heartrate   = rate_data[:1]
-    v_breathrate  = rate_data[:2]
+    v_timestamps  = rate_data[:,0]
+    v_heartrate   = rate_data[:,1]
+    v_breathrate  = rate_data[:,2]
 
     # convert timestamps to date-time
     v_datetime  = [dt.datetime.fromtimestamp(t) for t in v_timestamps]
@@ -164,9 +166,9 @@ def plotMovements(data_path: str, name: str, distance_data: np.ndarray):
     :return:
     '''
     # get series from data
-    v_timestamps = distance_data[:0]
-    v_heart_move = distance_data[:1]
-    v_breath_move = distance_data[:2]
+    v_timestamps = distance_data[:,0] 
+    v_heart_move = distance_data[:,1]
+    v_breath_move = distance_data[:,2]
     
     # convert timestamps to date-time
     v_datetime = [dt.datetime.fromtimestamp(t) for t in v_timestamps]
@@ -194,7 +196,7 @@ def plotFFTdata(data_path: str, name: str, FFT_data: np.ndarray, timebase:float)
     :param timebase:
     :return:
     '''
-    FFT_freq = range(len(FFT_data)) / timebase
+    FFT_freq = np.arange(len(FFT_data)) / timebase
     fig, ax = plt.subplots(1, 1, figsize=(15,8) )
     if len(FFT_data.shape) ==1:
         # simple case, only one FFT-data set
@@ -203,7 +205,7 @@ def plotFFTdata(data_path: str, name: str, FFT_data: np.ndarray, timebase:float)
         FFT_mean = np.mean(FFT_data, axis=1)
         FFT_count = FFT_data.shape[0]
         for i in range(FFT_count):
-            ax.plot(FFT_freq, FFT_data[i,:], color=0.5)
+            ax.plot(FFT_freq, FFT_data[i,:], color='0.5')  # string '0.5' = matplotlib grayscale shade
         ax.plot(FFT_freq, FFT_mean, color='black')
         
     ax.set_title('Spectrum: '+name)
