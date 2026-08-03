@@ -2,12 +2,11 @@
 test the preprocessing of radarLib
 '''
 
-
 from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-maxFrame = 400000
+maxFrame = None
 
 
 def runPreprocess(dataPath:str, distance:float, altCalculation:bool=False):
