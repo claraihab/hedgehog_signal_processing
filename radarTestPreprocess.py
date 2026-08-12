@@ -11,7 +11,7 @@ maxFrame = None
 
 def runPreprocess(dataPath:str, distance:float, altCalculation:bool=False):
     '''
-    run preProcessing for one radar recording and create one file with phase vaues and one with the norm distance values
+    run preProcessing for one radar recording and create one file with phase values and one with the norm distance values
     :param dataPath:
     :param distance:
     :param altCalculation: True -> use alternate calculation for signal phase
@@ -71,7 +71,6 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
 
 
 
-
 ## PRE-PROCESSING STARTS HERE
 
 #processing for dog 
@@ -87,16 +86,6 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
 #     runDistCalc(dataPath, altCalculation=True)
 
 
-#     '''
-#     for i in  range(1,len(radarFilePaths)):
-#         dataPath = radarFilePaths[i]
-#         distance = radarDistances[i]
-#         runPreprocess(dataPath, distance)
-#         runDistCalc(dataPath)
-#     '''
-
-
-
 #processing for awake hedgehogs
 
 # for file_path, distance in zip(radarFilePaths2, radarDistances2):
@@ -109,7 +98,6 @@ def runDistCalc(dataPath:str, altCalculation:bool=False):
 #     runPreprocess(file_path, distance, altCalculation=True)
 #     runDistCalc(file_path, altCalculation=True)
     
-
 
 # loop for hibernating + arousal hedgehogs 
 for dataPath, distance in zip(radarFilePaths1, radarDistances1): 
