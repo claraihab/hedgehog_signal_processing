@@ -20,8 +20,8 @@ USE_FFT_FILT    = False
 
 # filter frequencies for hibernating hedgehog
 MIN_LOW_FREQ_HIB   = 0.2 #for breathing
-MAX_LOW_FREQ_HIB    = 5 #should decrease from 14
-MIN_HIGH_FREQ_HIB  = 2 #for heart rate
+MAX_LOW_FREQ_HIB    = 3 #should decrease from 14
+MIN_HIGH_FREQ_HIB  = 4 #for heart rate
 MAX_HIGH_FREQ_HIB  = 20 
 
 #normal, for dog or arousals
@@ -39,8 +39,6 @@ AWAKE_HEART_BAND  = [NORMAL_HIGH_FREQ_MIN, NORMAL_HIGH_FREQ_MAX]
 # Plot-spectrum x-axis cutoff (in 1/min). HIB bands top out at 20 bpm so the default
 # MAX_PLOT_BPM=70 (from radarTools) is fine there. Awake heart rate goes up to 280 bpm,
 # so the awake run below passes a higher max_plot_bpm explicitly.
-
-MAX_PLOT_BPM   = 70 
 AWAKE_MAX_PLOT_BPM = 300
 
 
@@ -200,7 +198,9 @@ def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list
     plotDataLow = distData.copy()
     # bandpass-filter for breathrate
     plotDataLow[:,1]  = filterData(plotDataLow[:,1], breathRange[0], breathRange[1], frames_per_min, order=4 )
-    breathRate = calcRate( plotDataLow[:,1], radarConfig.frame_rate_Hz )
+    breathResult = calcRateSNR( plotDataLow[:,1], radarConfig.frame_rate_Hz, n_harmonics=4,
+                                 min_freq=max(0.01, breathRange[0]*0.5), max_freq=breathRange[1]*1.5 )
+    breathRate = breathResult["rate"]
     breathStd = np.std(plotDataLow[:,1]) #Standard Deviation of Respiration Signal
 
     plotDataHigh = distData.copy()
@@ -210,14 +210,20 @@ def calcRates(radarConfig:radarConfigData, distData:np.ndarray, breathRange:list
     plotDataHigh[:,1] = notchFilter(plotDataHigh[:,1], freq=breathRate*4, Q=5, fs=frames_per_min)
     # filter for heartRate
     plotDataHigh[:,1] = filterData(plotDataHigh[:,1],heartRange[0], heartRange[1], frames_per_min, order=4 )
-    heartRate = calcRate( plotDataHigh[:,1], radarConfig.frame_rate_Hz )
+    heartResult = calcRateSNR( plotDataHigh[:,1], radarConfig.frame_rate_Hz, n_harmonics=4,
+                                min_freq=heartRange[0]*0.5, max_freq=heartRange[1]*1.5 )
+    heartRate = heartResult["rate"]
     heartStd = np.std(plotDataHigh[:,1]) #Standard Deviation of Heart Signal
 
     return {
         'Breathrate': breathRate, 
         'Heartrate': heartRate,
         'BreathStd': breathStd,
-        'HeartStd': heartStd
+        'HeartStd': heartStd,
+        'Breath_SNR_dB': breathResult["snr_dB"],
+        'Heart_SNR_dB': heartResult["snr_dB"],
+        'Breath_Prominence': breathResult["prominence_ratio"],
+        'Heart_Prominence': heartResult["prominence_ratio"],
     }
 
 
@@ -255,6 +261,10 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
 
     rates = []
     rateLen = int(radarConfig.frame_rate_Hz * plotRange)    # how much data to use for calculation
+    if distCount < rateLen:
+        print(f"   WARNING: recording has {distCount} frames, shorter than one "
+              f"{plotRange}s window ({rateLen} frames needed) - skipping, 0 rate windows produced.")
+        return rates
     for ofs in range(0, distCount-rateLen, rateLen//2):
         # select part of data to calculate rates
         rateData = distData[ofs:ofs+rateLen,:]
@@ -274,6 +284,10 @@ def calcRatesOverTime(dataPath:str, plotRange:int):
             "Heart_Rate_BPM": breath_heart_rate['Heartrate'],
             "Breathing_Std": breath_heart_rate['BreathStd'],      # Added 
             "Heart_Std": breath_heart_rate['HeartStd'],          
+            "Breath_SNR_dB": breath_heart_rate['Breath_SNR_dB'],
+            "Heart_SNR_dB": breath_heart_rate['Heart_SNR_dB'],
+            "Breath_Prominence": breath_heart_rate['Breath_Prominence'],
+            "Heart_Prominence": breath_heart_rate['Heart_Prominence'],
             "Arousal_Flag": status,
             "Displacement_Std": window_std
             })
@@ -296,6 +310,10 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
     
     awake_rates = []
     rateLen = int(radarConfig.frame_rate_Hz * plotRange)    # how much data to use for calculation
+    if distCount < rateLen:
+        print(f"   WARNING: recording has {distCount} frames, shorter than one "
+              f"{plotRange}s window ({rateLen} frames needed) - skipping, 0 rate windows produced.")
+        return awake_rates
     for ofs in range(0, distCount-rateLen, rateLen//2):
         # select part of data to calculate rates
         rateData = distData[ofs:ofs+rateLen,:]
@@ -319,13 +337,15 @@ def calcRatesOverTimeAwake(dataPath:str, plotRange:int):
             "Heart_Rate_BPM": breath_heart_rate['Heartrate'],
             "Breathing_Std": breath_heart_rate['BreathStd'],     
             "Heart_Std": breath_heart_rate['HeartStd'],        
+            "Breath_SNR_dB": breath_heart_rate['Breath_SNR_dB'],
+            "Heart_SNR_dB": breath_heart_rate['Heart_SNR_dB'],
+            "Breath_Prominence": breath_heart_rate['Breath_Prominence'],
+            "Heart_Prominence": breath_heart_rate['Heart_Prominence'],
             "Arousal_Flag": status,
             "Displacement_Std": window_std
        })
     # return list of calculated rates
     return awake_rates
-
-
 
 
 def runHibernatingAnalysis(data_paths:list = None):
@@ -341,6 +361,9 @@ def runHibernatingAnalysis(data_paths:list = None):
         print(f"\nProcessing (hibernating config): {data_path}")
         try:
             rates = calcRatesOverTime(data_path, PLOT_RANGE_HIB)
+            if len(rates) == 0:
+                print(f"   Skipping {data_path} - no rate windows produced (recording too short).")
+                continue
             rates_df = pd.DataFrame.from_dict(rates)
             rates_df["Timestamp_UTC"] = pd.to_datetime(rates_df["Timestamp_s"], unit="s", utc=True)
             rates_df.to_csv(os.path.join(data_path, "rates.csv"), index=False)
@@ -365,6 +388,9 @@ def runAwakeAnalysis(data_paths:list = None):
         print(f"\nProcessing (awake config): {data_path}")
         try:
             awake_rates = calcRatesOverTimeAwake(data_path, PLOT_RANGE)
+            if len(awake_rates) == 0:
+                print(f"   Skipping {data_path} - no rate windows produced (recording too short).")
+                continue
             awake_rates_df = pd.DataFrame.from_dict(awake_rates)
             awake_rates_df["Timestamp_UTC"] = pd.to_datetime(awake_rates_df["Timestamp_s"], unit="s", utc=True)
             awake_rates_df.to_csv(os.path.join(data_path, "awake_rates.csv"), index=False)
@@ -378,8 +404,9 @@ def runAwakeAnalysis(data_paths:list = None):
 def buildComparisonCsv(data_path:str):
     '''
     merge the hibernating-band (rates.csv) and awake-band (awake_rates.csv) estimates for
-    the same recording into one CSV, aligned by nearest timestamp. 
-    CO2-confirmed arousal timestamps will decide - per window - which estimate is the real one.
+    the same recording into one CSV, aligned by nearest timestamp. Both
+    candidate heart/breath-rate estimates for any given moment side by side, then use 
+    CO2-confirmed arousal timestamps to decide - per window - which estimate is the real one.
     '''
     hib_path   = os.path.join(data_path, "rates.csv")
     awake_path = os.path.join(data_path, "awake_rates.csv")
@@ -393,7 +420,7 @@ def buildComparisonCsv(data_path:str):
     hib_df   = hib_df.sort_values("Timestamp_s")
     awake_df = awake_df.sort_values("Timestamp_s")
 
-    # awake windows (30s) are much finer than hibernating windows (5min), so aligning each
+    # awake windows (30s) are much finer than hibernating windows (5min), so align each
     # awake row to its nearest hibernating window rather than trying to force equal timestamps
     merged = pd.merge_asof(awake_df, hib_df, on="Timestamp_s", direction="nearest")
     merged["Timestamp_UTC"] = pd.to_datetime(merged["Timestamp_s"], unit="s", utc=True)
@@ -405,7 +432,7 @@ def runBothAnalyses(data_paths:list = None):
     '''
     for recordings that may contain both torpor and arousal bouts (e.g. radarFilePaths1),
     run BOTH the hibernating-band and awake-band analyses on the same files, then merge
-    the two into rates_comparison.csv per recording. Use your CO2 log afterward to pick
+    the two into rates_comparison.csv per recording. Use  CO2 log afterward to pick
     which set of numbers (Hib_* vs Awake_*) is correct for each time window.
     '''
     if data_paths is None:
@@ -422,20 +449,25 @@ def runBothAnalyses(data_paths:list = None):
             traceback.print_exc()
 
 
+
+#doggie so no hibernating rates
+if __name__ == '__main__':
+
+    awake_rates = calcRatesOverTimeAwake(radarFilePaths3[0], PLOT_RANGE) 
+    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+    awake_rates_csv_path = os.path.join(radarFilePaths3[0], "awake_rates.csv")
+    awake_rates_df.to_csv(awake_rates_csv_path)
+    plotDistData(radarFilePaths3[0], True) 
+
+
+
 if __name__ == '__main__':
     # runs both band configs on radarFilePaths1 (files may contain both torpor and arousal
     # bouts), producing rates.csv, awake_rates.csv, and rates_comparison.csv per recording.
+    # Use runHibernatingAnalysis()/runAwakeAnalysis() individually.
 
     runBothAnalyses()
 
 
 
-#doggie so no hibernating rates
-# if __name__ == '__main__':
-
-#     awake_rates = calcRatesOverTimeAwake(radarFilePaths3[0], PLOT_RANGE) 
-#     awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-#     awake_rates_csv_path = os.path.join(radarFilePaths3[0], "awake_rates.csv")
-#     awake_rates_df.to_csv(awake_rates_csv_path)
-#     plotDistData(radarFilePaths3[0], True) 
 
