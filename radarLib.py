@@ -236,7 +236,99 @@ def calcFFTbinFromFrequency(radarConfig:radarConfigData, frequency:float) -> int
 
 
 
-def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None, frameMax:int=None, altCalculation:bool = False) -> np.ndarray:
+def findTargetBin(dataPath:str, scanSeconds:float=120.0, minDistance:float=0.10, maxDistance:float=1.0,
+                   searchBand:list=None, altCalculation:bool=False, window:np.ndarray|str=None) -> dict:
+    '''
+    automatically find the range bin with the strongest periodic vital-sign activity, instead
+    of relying on a manually measured distance. A live target's bin shows periodic phase
+    modulation from breathing/heartbeat; static clutter (walls, cage bars) reflects strongly
+    but without that periodic modulation - so raw reflection strength alone is not enough.
+
+    Strategy: take a short window of frames, unwrap the phase of every candidate bin over
+    that window, bandpass-filter it to searchBand, and pick the bin with the highest energy
+    (variance) in that band.
+
+    :param dataPath:        where to find the recording
+    :param scanSeconds:     how much data (in seconds) to use for the scan. Needs to be long
+                             enough to contain several cycles of the slowest signal in
+                             searchBand - heartbeat (a few bpm even in deep torpor) is a more
+                             reliable pick for this than breathing, which can be as slow as
+                             0.2 cycles/min and would need a much longer scan window to show
+                             up reliably.
+    :param minDistance:     skip candidate bins closer than this (m) - avoids TX/RX leakage
+                             near the sensor, which otherwise tends to dominate raw energy.
+    :param maxDistance:     skip candidate bins farther than this (m)
+    :param searchBand:      [lowFreq, highFreq] in cycles/min to bandpass each candidate bin
+                             before scoring it. Defaults to a wide band covering both torpid
+                             and awake heart rate (2-280 bpm) so it works for either dataset.
+    :param altCalculation:  True -> use processOneFrameAlt instead of processOneFrame
+    :param window:          optional window function for the chirp FFT (same as preProcessRadarData)
+    :return:    dict with keys: bin (int), distance (float, m), energy_per_bin (np.ndarray),
+                bins (np.ndarray of candidate bin indices, for diagnostic plotting)
+    '''
+    if searchBand is None:
+        searchBand = [2.0, 280.0]   # covers HIB_HEART_BAND through AWAKE_HEART_BAND
+
+    TX_ANTENNA = 0
+    RX_ANTENNA = 0
+
+    radarConfig, data, timestamps = importRadarData(dataPath)
+
+    if (window is not None) and (type(window) == str):
+        window = get_window(window, radarConfig.num_samples_per_chirp)
+
+    scanFrames = min(int(scanSeconds * radarConfig.frame_rate_Hz), data.shape[0])
+    # use a chunk from the middle of the recording rather than the very start, to avoid any
+    # startup transient in the sensor/recording
+    startFrame = max(0, (data.shape[0] - scanFrames) // 2)
+
+    minBin = max(1, calcFFTbinFromFrequency(radarConfig, calcFrequencyFromDistance(radarConfig, minDistance)))
+    maxBin = calcFFTbinFromFrequency(radarConfig, calcFrequencyFromDistance(radarConfig, maxDistance))
+
+    print(f"   [Bin Scan] scanning bins {minBin}-{maxBin} over {scanFrames} frames "
+          f"({scanFrames/radarConfig.frame_rate_Hz:.1f}s) starting at frame {startFrame}")
+
+    # collect the complex range-FFT value at each candidate bin, for each scanned frame
+    candidateBins = np.arange(minBin, maxBin+1)
+    complexByBin = np.zeros((scanFrames, len(candidateBins)), dtype=complex)
+
+    for i, frameNum in enumerate(range(startFrame, startFrame+scanFrames)):
+        if len(data.shape) == 5:
+            frameRaw = data[frameNum, TX_ANTENNA, RX_ANTENNA].copy()
+        else:
+            frameRaw = data[frameNum, RX_ANTENNA].copy()
+
+        if altCalculation:
+            frameFFT = processOneFrameAlt(frameRaw, mean=True, window=window)
+        else:
+            frameFFT = processOneFrame(frameRaw, mean=True, window=window)
+
+        complexByBin[i, :] = frameFFT[candidateBins]
+
+    frames_per_min = int(radarConfig.frame_rate_Hz * 60)
+    energyPerBin = np.zeros(len(candidateBins))
+
+    for col in range(len(candidateBins)):
+        phase = np.unwrap(np.angle(complexByBin[:, col]))
+        phaseFiltered = filterData(phase, searchBand[0], searchBand[1], frames_per_min, order=4)
+        energyPerBin[col] = np.var(phaseFiltered)
+
+    bestIdx  = np.argmax(energyPerBin)
+    bestBin  = int(candidateBins[bestIdx])
+    bestFreq = bestBin * radarConfig.fft_step_Hz
+    bestDist = calcDistanceFromFrequency(radarConfig, bestFreq)
+
+    print(f"   [Bin Scan] best bin: {bestBin}  (~{bestDist:.3f} m)")
+
+    return {
+        "bin": bestBin,
+        "distance": bestDist,
+        "energy_per_bin": energyPerBin,
+        "bins": candidateBins,
+    }
+
+
+def preProcessRadarData(dataPath:str, distance:float=None, targetBin:int=None, window:np.ndarray|str=None, frameMax:int=None, altCalculation:bool = False) -> np.ndarray:
     '''
     import raw radar-data, process frames and return numpy-array with timestamps and angles from FFTbins
 
@@ -253,7 +345,8 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
     to avoid time-consuming recalculation at later processing steps
 
     :param dataPath:    where are the data?
-    :param distance:    float|    distance between sensor and target/animal in m
+    :param distance:    float|    distance between sensor and target/animal in m. Ignored if targetBin is given.
+    :param targetBin:   int|      explicit FFT bin to lock onto (e.g. from findTargetBin()) - bypasses the distance lookup
     :param window:      optional, window or name of window-function for FFT of chirps
     :param frameMax:    optional, max number of frames to process
     :param altCalculation: True -> use alternate calculation
@@ -275,13 +368,21 @@ def preProcessRadarData(dataPath:str, distance:float, window:np.ndarray|str=None
         if frameCount >frameMax: frameCount = frameMax
 
     # prepare result-array
-    freq = calcFrequencyFromDistance(radarConfig, distance)
-    FFTbin  = calcFFTbinFromFrequency(radarConfig, freq)
+    if targetBin is not None:
+        FFTbin = targetBin
+    else:
+        if distance is None:
+            raise ValueError("preProcessRadarData: need either distance or targetBin")
+        freq = calcFrequencyFromDistance(radarConfig, distance)
+        FFTbin  = calcFFTbinFromFrequency(radarConfig, freq)
     if FFTbin <=0:
         print("Invalid distance!")
         return None
     
-    print(f"   [Target Locked] FFT Bin: {FFTbin} for Distance: {distance}m")
+    if targetBin is not None:
+        print(f"   [Target Locked] FFT Bin: {FFTbin} (explicit targetBin)")
+    else:
+        print(f"   [Target Locked] FFT Bin: {FFTbin} for Distance: {distance}m")
     # create NP-array zero initialised to speed up
     results = np.zeros([frameCount,4], dtype=float)
 
@@ -424,35 +525,78 @@ def calcRate(distData:np.ndarray, framerate_Hz:float) -> float:
     return peakFreq
 
 
+def calcRateSNR(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3, n_harmonics: int = 4,
+                 min_freq: float = None, max_freq: float = None, prominence_pad_frac: float = 0.3) -> dict:
+    '''
+    Peak-picking plus SNR and prominence estimation.
 
-##peak to floor, signal to noise ratio
+    Harmonics are matched by TARGET FREQUENCY (k * peakFreq), not by multiplying the array
+    index - multiplying the index only gives the right harmonic bin when index 0 corresponds
+    to frequency 0, which is false once min_freq truncation is active (always, here).
 
-def calcRateWithSNR(distData, framerate_Hz, exclude_bins=3):
-    distNorm = normalize(distData)
+    Prominence is computed on a window padded moderately beyond [min_freq, max_freq] (not
+    the tight truncated window, not the full spectrum): tight truncation forces prominence
+    to 0 whenever the peak sits at the window's edge (no neighbor to compare against); the
+    full spectrum re-admits the bandpass filter's own crushed-to-near-zero stopband,
+    inflating prominence toward ~1.0 for nearly everything. Padding by a fraction of the
+    band's own width avoids both failure modes.
+    '''
+    distNorm     = normalize(distData)
     distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
-    spectrum = sp.fft.rfft(distWindowed)
-    specAbs = np.abs(spectrum)
-    specAbs[0] = 0  # suppress DC
-    specFreq = sp.fft.rfftfreq(len(distData), 1/(framerate_Hz*60))
+    spectrum     = sp.fft.rfft(distWindowed)
+    specAbs      = np.abs(spectrum)
+    specAbs[0]   = 0
+    specFreq     = sp.fft.rfftfreq(len(distData), 1 / (framerate_Hz * 60))
 
-    peakIdx = np.argmax(specAbs)
-    peakFreq = specFreq[peakIdx]
-    peakPower = specAbs[peakIdx] ** 2
+    if (min_freq is not None) or (max_freq is not None):
+        keep = np.ones(len(specFreq), dtype=bool)
+        if min_freq is not None:
+            keep &= (specFreq >= min_freq)
+        if max_freq is not None:
+            keep &= (specFreq <= max_freq)
+        specAbs_restricted  = specAbs[keep]
+        specFreq_restricted = specFreq[keep]
+    else:
+        specAbs_restricted, specFreq_restricted = specAbs, specFreq
 
-    # noise floor = median power of everything EXCEPT a small window around the peak
-    # (excluding the peak's own bins keeps the floor estimate from being biased upward by the peak itself)
-    mask = np.ones(len(specAbs), dtype=bool)
-    lo, hi = max(0, peakIdx-exclude_bins), min(len(specAbs), peakIdx+exclude_bins+1)
-    mask[lo:hi] = False
-    noiseFloor = np.median(specAbs[mask] ** 2)
+    if len(specAbs_restricted) == 0:
+        return {"rate": np.nan, "snr_dB": np.nan, "prominence": np.nan, "prominence_ratio": np.nan}
 
-    snr_dB = 10 * np.log10(peakPower / max(noiseFloor, 1e-30))
+    peakIdx  = np.argmax(specAbs_restricted)
+    peakFreq = specFreq_restricted[peakIdx]
 
-    return {"rate": peakFreq, "snr_dB": snr_dB}
+    # harmonics by target frequency - correct regardless of truncation/offset
+    harmonicIdx = []
+    for k in range(1, n_harmonics + 1):
+        target_freq = k * peakFreq
+        if specFreq_restricted[0] <= target_freq <= specFreq_restricted[-1]:
+            closest_bin = int(np.argmin(np.abs(specFreq_restricted - target_freq)))
+            if closest_bin not in harmonicIdx:
+                harmonicIdx.append(closest_bin)
 
+    signalPower = np.mean([specAbs_restricted[idx] ** 2 for idx in harmonicIdx]) if harmonicIdx else specAbs_restricted[peakIdx] ** 2
 
+    mask = np.ones(len(specAbs_restricted), dtype=bool)
+    for idx in harmonicIdx:
+        lo, hi = max(0, idx - exclude_bins), min(len(specAbs_restricted), idx + exclude_bins + 1)
+        mask[lo:hi] = False
 
-from scipy.signal import find_peaks
-peaks, props = find_peaks(specAbs, prominence=0)
-best = peaks[np.argmax(props["prominences"])]
-prominence = props["prominences"][np.argmax(props["prominences"])]
+    noiseFloor = np.median(specAbs_restricted[mask] ** 2) if mask.any() else 1e-30
+    snr_dB = 10 * np.log10(signalPower / max(noiseFloor, 1e-30))
+
+    # prominence: modestly padded window 
+    if (min_freq is not None) and (max_freq is not None):
+        band_width = max_freq - min_freq
+        pad = band_width * prominence_pad_frac
+        prom_min = max(0, min_freq - pad)
+        prom_max = max_freq + pad
+        keep_prom = (specFreq >= prom_min) & (specFreq <= prom_max)
+        specAbs_prom, specFreq_prom = specAbs[keep_prom], specFreq[keep_prom]
+    else:
+        specAbs_prom, specFreq_prom = specAbs_restricted, specFreq_restricted
+
+    peakIdx_prom = int(np.argmin(np.abs(specFreq_prom - peakFreq)))
+    prominence = signal.peak_prominences(specAbs_prom, [peakIdx_prom])[0][0]
+    prominence_ratio = prominence / specAbs_prom[peakIdx_prom] if specAbs_prom[peakIdx_prom] > 0 else 0.0
+
+    return {"rate": peakFreq, "snr_dB": snr_dB, "prominence": prominence, "prominence_ratio": prominence_ratio}
