@@ -11,9 +11,10 @@ from radarLib import *
 from radarTools import *
 from radarTestDefs import *
 
-
-PLOT_RANGE      = 30   #how much data to plot in s
+PLOT_RANGE      = 30   #how much data to plot in s (only for arousals, dog)
 PLOT_RANGE_HIB = 300
+PLOT_RANGE_HIB_Heart = 60
+
 USE_ALT_PHASE   = True
 USE_ALT_DIST    = True
 USE_FFT_FILT    = False 
@@ -75,13 +76,13 @@ def plotDistDataChunk(radarConfig:radarConfigData, plotData:np.ndarray, breathBa
        plotDistances(plotData, radarConfig.frame_rate_Hz, 'full-spectrum'+name_suffix,  data_path = dataPath, max_plot_bpm=max_plot_bpm)
        plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate'+name_suffix,  data_path = dataPath, max_plot_bpm=max_plot_bpm)
        plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate'+name_suffix,  data_path = dataPath, max_plot_bpm=max_plot_bpm)
-       plotDistances(combinedData, radarConfig.frame_rate_Hz, title+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath, max_plot_bpm=max_plot_bpm)
+       #plotDistances(combinedData, radarConfig.frame_rate_Hz, title+name_suffix, dataColumns=[1, 2], legend=["Respiration", "Heart"], data_path=dataPath, max_plot_bpm=max_plot_bpm) #will not work
 
     else:
         plotDistances(plotData, radarConfig.frame_rate_Hz,'full-spectrum', max_plot_bpm=max_plot_bpm)
         plotDistances(plotDataLow, radarConfig.frame_rate_Hz, 'low-rate', max_plot_bpm=max_plot_bpm)
         plotDistances(plotDataHigh, radarConfig.frame_rate_Hz, 'high-rate', max_plot_bpm=max_plot_bpm)
-        plotDistances(combinedData, radarConfig.frame_rate_Hz, 'heart-respiration', dataColumns=[1,2], legend=["Respiration","Heart"], max_plot_bpm=max_plot_bpm)
+        #plotDistances(combinedData, radarConfig.frame_rate_Hz, 'heart-respiration', dataColumns=[1,2], legend=["Respiration","Heart"], max_plot_bpm=max_plot_bpm)
     
 
 def FFTidx(freq:float, dataLen:int, fs:float):
@@ -162,7 +163,7 @@ def plotDistData(dataPath: str, breathBand:list, heartBand:list, plotRange:int, 
     
     radarConfig = importRadarConfig(dataPath)
 
-    frames_to_skip = int(10.0 * radarConfig.frame_rate_Hz)
+    frames_to_skip = int(15.0 * radarConfig.frame_rate_Hz)
     
     if distData.shape[0] > frames_to_skip:
         distData = distData[frames_to_skip:, :] # Slice off the start
@@ -466,8 +467,7 @@ if __name__ == '__main__':
     # bouts), producing rates.csv, awake_rates.csv, and rates_comparison.csv per recording.
     # Use runHibernatingAnalysis()/runAwakeAnalysis() individually.
 
-    runBothAnalyses()
-
+    runAwakeAnalysis()
 
 
 
