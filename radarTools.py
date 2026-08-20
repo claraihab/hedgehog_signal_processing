@@ -5,7 +5,6 @@
 
 import os
 import numpy as np
-
 import matplotlib.pyplot as plt
 import scipy as sp
 import scipy.signal as signal
@@ -79,10 +78,11 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
     timestamps  = distData[:,0]
     timestamps  = timestamps - timestamps[0]
 
+
     peakFreq = []
     specs = []
 
-    specFreq = sp.fft.rfftfreq(dataLen, 1 / (framerate_Hz * 60))
+    specFreq = sp.fft.rfftfreq(dataLen, 1 / (framerate_Hz * 60)) # display frequencies in 1/min 
 
     distances = distData[:,dataColumns].copy() * 1000
 
@@ -90,7 +90,7 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
         distNorm = normalize(distances[:,col])
         distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
         spectrum = sp.fft.rfft(distWindowed)
-        spectrum[0] = 0
+        spectrum[0] = 0 # suppress DC component
         specAbs = np.abs(spectrum)
         peakIdx = np.argmax(specAbs)
         specs.append(specAbs)
@@ -151,4 +151,3 @@ def plotDistances(distData:np.ndarray, framerate_Hz:float, name:str, dataColumns
         plt.show()
 
     return peakFreq
-
