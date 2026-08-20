@@ -175,7 +175,7 @@ def plotDualWindowChunk(dataPath: str, breathBand: list, heartBand: list,
     radarConfig = importRadarConfig(dataPath)
 
     # skip startup transient, same convention as plotDistData()
-    frames_to_skip = int(10.0 * radarConfig.frame_rate_Hz)
+    frames_to_skip = int(15.0 * radarConfig.frame_rate_Hz)
     if distData.shape[0] > frames_to_skip:
         distData = distData[frames_to_skip:, :]
 
@@ -263,11 +263,12 @@ if __name__ == "__main__":
 
             # Rate calculations (returns Python lists)
             breath_rates = calcRespRateOverTime(data_path, plotRangeResp=300)
-            heart_rates  = calcHeartRateOverTime(data_path, plotRangeHeart=60, breath_rates=breath_rates)
+            heart_rates  = calcHeartRateOverTime(data_path, plotRangeHeart=60, breath_rates=breath_rates) #should try making it higher?
 
             # Convert Respiration to DataFrame & add UTC column
             df_breath = pd.DataFrame(breath_rates)
             if not df_breath.empty:
+                df_breath["Timestamp_local"] = pd.to_datetime(df_breath["Timestamp_s"], unit="s", utc=True).dt.tz_convert("Europe/Berlin")
                 df_breath["Timestamp_UTC"] = pd.to_datetime(df_breath["Timestamp_s"], unit="s", utc=True)
                 df_breath.to_csv(os.path.join(data_path, "breathing_rates.csv"), index=False)
 
@@ -275,6 +276,7 @@ if __name__ == "__main__":
             df_heart = pd.DataFrame(heart_rates)
             if not df_heart.empty:
                 df_heart["Timestamp_UTC"] = pd.to_datetime(df_heart["Timestamp_s"], unit="s", utc=True)
+                df_heart["Timestamp_local"] = pd.to_datetime(df_heart["Timestamp_s"], unit="s", utc=True).dt.tz_convert("Europe/Berlin")
                 df_heart.to_csv(os.path.join(data_path, "heart_rates.csv"), index=False)
 
             print(f"Saved CSVs for: {data_path}")
@@ -287,5 +289,39 @@ if __name__ == "__main__":
 
 ##combine both heart and breaths in one for hibernating:
 
+def combineRates(dataPath: str, save: bool = True) -> pd.DataFrame:
+    breath_path = os.path.join(dataPath, "breathing_rates.csv")
+    heart_path = os.path.join(dataPath, "heart_rates.csv")
+ 
+    if not (os.path.exists(breath_path) and os.path.exists(heart_path)):
+        print(f"Skipping {dataPath} - need both breath_rates.csv and heart_rates.csv")
+        return pd.DataFrame()
+ 
+    breath_df = pd.read_csv(breath_path).sort_values("Timestamp_s")
+    heart_df = pd.read_csv(heart_path).sort_values("Timestamp_s")
+
+    overlap_cols = [c for c in ["Arousal_Flag", "Displacement_Std", "Timestamp_UTC"]
+                    if c in breath_df.columns and c in heart_df.columns]
+    breath_df = breath_df.drop(columns=overlap_cols)
+ 
+    combined = pd.merge_asof(heart_df, breath_df, on="Timestamp_s", direction="nearest")
+ 
+    if save:
+        combined.to_csv(os.path.join(dataPath, "rates.csv"), index=False)
+        print(f"Saved combined rates.csv for {dataPath} ({len(combined)} rows)")
+ 
+    return combined
+ 
+ 
+if __name__ == "__main__":
+    from radarTestDefs import radarFilePaths1
+    for data_path in radarFilePaths1:
+        try:
+            combineRates(data_path)
+        except Exception:
+            print(f"Failed: {data_path}")
+            import traceback
+            traceback.print_exc()
+ 
 
 
