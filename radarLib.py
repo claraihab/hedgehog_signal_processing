@@ -525,6 +525,19 @@ def calcRate(distData:np.ndarray, framerate_Hz:float) -> float:
     return peakFreq
 
 
+def calcRate(distData: np.ndarray, framerate_Hz: float, zero_pad_factor: float = 2.0) -> float:
+    distNorm = normalize(distData)
+    distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
+    nfft = int(len(distData) * zero_pad_factor)
+    spectrum = sp.fft.rfft(distWindowed, n=nfft)
+    specAbs = np.abs(spectrum)
+    specAbs[0] = 0
+    specFreq = sp.fft.rfftfreq(nfft, 1 / (framerate_Hz * 60))
+
+    peakIdx = np.argmax(specAbs)
+    return specFreq[peakIdx]
+
+
 def calcRateSNR(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3, n_harmonics: int = 4,
                  min_freq: float = None, max_freq: float = None, prominence_pad_frac: float = 0.3) -> dict:
     '''
@@ -532,7 +545,7 @@ def calcRateSNR(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3
 
     Harmonics are matched by TARGET FREQUENCY (k * peakFreq), not by multiplying the array
     index - multiplying the index only gives the right harmonic bin when index 0 corresponds
-    to frequency 0, which is false once min_freq truncation is active (always, here).
+    to frequency 0, which is false once min_freq truncation is active.
 
     Prominence is computed on a window padded moderately beyond [min_freq, max_freq] (not
     the tight truncated window, not the full spectrum): tight truncation forces prominence
@@ -600,3 +613,276 @@ def calcRateSNR(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3
     prominence_ratio = prominence / specAbs_prom[peakIdx_prom] if specAbs_prom[peakIdx_prom] > 0 else 0.0
 
     return {"rate": peakFreq, "snr_dB": snr_dB, "prominence": prominence, "prominence_ratio": prominence_ratio}
+
+
+
+
+
+
+def calcRateSNR(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3, n_harmonics: int = 4,
+                min_freq: float = None, max_freq: float = None, prominence_pad_frac: float = 0.3,
+                zero_pad_factor: float = 2.0) -> dict:
+    '''
+    Peak-picking plus SNR and prominence estimation with zero-padding.
+    
+    `zero_pad_factor=2.0` zero-pads the signal to 2x its original length prior to the FFT,
+    interpolating spectral bins to increase digital frequency resolution.
+    '''
+    distNorm = normalize(distData)
+    distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
+    
+    # Apply zero-padding by setting FFT length nfft = len(distData) * zero_pad_factor
+    nfft = int(len(distData) * zero_pad_factor)
+    spectrum = sp.fft.rfft(distWindowed, n=nfft)
+    specAbs = np.abs(spectrum)
+    specAbs[0] = 0
+    specFreq = sp.fft.rfftfreq(nfft, 1 / (framerate_Hz * 60))
+
+    if (min_freq is not None) or (max_freq is not None):
+        keep = np.ones(len(specFreq), dtype=bool)
+        if min_freq is not None:
+            keep &= (specFreq >= min_freq)
+        if max_freq is not None:
+            keep &= (specFreq <= max_freq)
+        specAbs_restricted = specAbs[keep]
+        specFreq_restricted = specFreq[keep]
+    else:
+        specAbs_restricted, specFreq_restricted = specAbs, specFreq
+
+    if len(specAbs_restricted) == 0:
+        return {"rate": np.nan, "snr_dB": np.nan, "prominence": np.nan, "prominence_ratio": np.nan}
+
+    peakIdx = np.argmax(specAbs_restricted)
+    peakFreq = specFreq_restricted[peakIdx]
+
+    harmonicIdx = []
+    for k in range(1, n_harmonics + 1):
+        target_freq = k * peakFreq
+        if specFreq_restricted[0] <= target_freq <= specFreq_restricted[-1]:
+            closest_bin = int(np.argmin(np.abs(specFreq_restricted - target_freq)))
+            if closest_bin not in harmonicIdx:
+                harmonicIdx.append(closest_bin)
+
+    signalPower = np.mean([specAbs_restricted[idx] ** 2 for idx in harmonicIdx]) if harmonicIdx else specAbs_restricted[peakIdx] ** 2
+
+    mask = np.ones(len(specAbs_restricted), dtype=bool)
+    for idx in harmonicIdx:
+        lo, hi = max(0, idx - exclude_bins), min(len(specAbs_restricted), idx + exclude_bins + 1)
+        mask[lo:hi] = False
+
+    noiseFloor = np.median(specAbs_restricted[mask] ** 2) if mask.any() else 1e-30
+    snr_dB = 10 * np.log10(signalPower / max(noiseFloor, 1e-30))
+
+    if (min_freq is not None) and (max_freq is not None):
+        band_width = max_freq - min_freq
+        pad = band_width * prominence_pad_frac
+        prom_min = max(0, min_freq - pad)
+        prom_max = max_freq + pad
+        keep_prom = (specFreq >= prom_min) & (specFreq <= prom_max)
+        specAbs_prom, specFreq_prom = specAbs[keep_prom], specFreq[keep_prom]
+    else:
+        specAbs_prom, specFreq_prom = specAbs_restricted, specFreq_restricted
+
+    peakIdx_prom = int(np.argmin(np.abs(specFreq_prom - peakFreq)))
+    prominence = signal.peak_prominences(specAbs_prom, [peakIdx_prom])[0][0]
+    prominence_ratio = prominence / specAbs_prom[peakIdx_prom] if specAbs_prom[peakIdx_prom] > 0 else 0.0
+
+    return {"rate": peakFreq, "snr_dB": snr_dB, "prominence": prominence, "prominence_ratio": prominence_ratio}
+
+
+
+
+def calcRateSNR2(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3, n_harmonics: int = 4,
+                min_freq: float = None, max_freq: float = None, prominence_pad_frac: float = 0.3) -> dict:
+    '''
+    Peak-picking plus SNR and prominence estimation.
+    '''
+    distNorm = normalize(distData)
+    distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
+    spectrum = sp.fft.rfft(distWindowed)
+    specAbs = np.abs(spectrum)
+    specAbs[0] = 0
+    specFreq = sp.fft.rfftfreq(len(distData), 1 / (framerate_Hz * 60))
+
+    # Restrict search band only for finding the fundamental peak
+    if (min_freq is not None) or (max_freq is not None):
+        keep = np.ones(len(specFreq), dtype=bool)
+        if min_freq is not None:
+            keep &= (specFreq >= min_freq)
+        if max_freq is not None:
+            keep &= (specFreq <= max_freq)
+        specAbs_restricted = specAbs[keep]
+        specFreq_restricted = specFreq[keep]
+    else:
+        keep = np.ones(len(specFreq), dtype=bool)
+        specAbs_restricted, specFreq_restricted = specAbs, specFreq
+
+    if len(specAbs_restricted) == 0:
+        return {"rate": np.nan, "snr_dB": np.nan, "prominence": np.nan, "prominence_ratio": np.nan}
+
+    # 1. Fundamental peak selection
+    peakIdx_restricted = np.argmax(specAbs_restricted)
+    peakFreq = specFreq_restricted[peakIdx_restricted]
+
+    # 2. Harmonics search in FULL spectrum (Fixes Issue 3) & window leakage masking (Fixes Issue 2)
+    signal_mask = np.zeros(len(specFreq), dtype=bool)
+    
+    for k in range(1, n_harmonics + 1):
+        target_freq = k * peakFreq
+        if specFreq[0] <= target_freq <= specFreq[-1]:
+            closest_bin = int(np.argmin(np.abs(specFreq - target_freq)))
+            # Capture the full main lobe of the window around each harmonic bin
+            lo = max(0, closest_bin - exclude_bins)
+            hi = min(len(specFreq), closest_bin + exclude_bins + 1)
+            signal_mask[lo:hi] = True
+
+    # 3. Sum signal power across all signal bins (Fixes Issue 1)
+    signalPower = np.sum(specAbs[signal_mask] ** 2)
+    n_signal_bins = np.sum(signal_mask)
+
+    # 4. Noise floor calculation with bandwidth normalization (Fixes Issue 4)
+    noise_mask = keep & (~signal_mask)
+    noise_bins_power = specAbs[noise_mask] ** 2
+
+    if len(noise_bins_power) > 0:
+        median_noise_per_bin = np.median(noise_bins_power)
+    else:
+        median_noise_per_bin = 1e-30
+
+    # Scale per-bin noise power by total number of signal bins
+    total_noise_power = median_noise_per_bin * n_signal_bins
+    snr_dB = 10 * np.log10(signalPower / max(total_noise_power, 1e-30))
+
+    # 5. Prominence calculation with local peak validation (Fixes Issue 5)
+    if (min_freq is not None) and (max_freq is not None):
+        band_width = max_freq - min_freq
+        pad = band_width * prominence_pad_frac
+        prom_min = max(0, min_freq - pad)
+        prom_max = max_freq + pad
+        keep_prom = (specFreq >= prom_min) & (specFreq <= prom_max)
+        specAbs_prom, specFreq_prom = specAbs[keep_prom], specFreq[keep_prom]
+    else:
+        specAbs_prom, specFreq_prom = specAbs, specFreq
+
+    peakIdx_prom = int(np.argmin(np.abs(specFreq_prom - peakFreq)))
+
+    # Ensure peakIdx_prom is a strict local maximum before running peak_prominences
+    is_local_max = (
+        0 < peakIdx_prom < len(specAbs_prom) - 1
+        and specAbs_prom[peakIdx_prom] >= specAbs_prom[peakIdx_prom - 1]
+        and specAbs_prom[peakIdx_prom] >= specAbs_prom[peakIdx_prom + 1]
+    )
+
+    if is_local_max:
+        prominence = float(signal.peak_prominences(specAbs_prom, [peakIdx_prom])[0][0])
+    else:
+        prominence = float(specAbs_prom[peakIdx_prom] - np.min(specAbs_prom))
+
+    prominence_ratio = prominence / specAbs_prom[peakIdx_prom] if specAbs_prom[peakIdx_prom] > 0 else 0.0
+
+    return {
+        "rate": peakFreq,
+        "snr_dB": snr_dB,
+        "prominence": prominence,
+        "prominence_ratio": prominence_ratio
+    }
+
+
+
+
+def calcRateSNR3(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 3, n_harmonics: int = 4,
+                min_freq: float = None, max_freq: float = None, prominence_pad_frac: float = 0.3,
+                zero_pad_factor: float = 2.0) -> dict:
+    '''
+    Peak-picking plus SNR and prominence estimation with zero-padding.
+    '''
+    distNorm = normalize(distData)
+    distWindowed = distNorm * signal.get_window(window='blackman', Nx=len(distData))
+    
+    # 1. Zero-padding setup
+    nfft = int(len(distData) * zero_pad_factor)
+    spectrum = sp.fft.rfft(distWindowed, n=nfft)
+    specAbs = np.abs(spectrum)
+    specAbs[0] = 0
+    specFreq = sp.fft.rfftfreq(nfft, 1 / (framerate_Hz * 60))
+
+    # Scale exclude_bins to match the zero-padded frequency bin spacing
+    effective_exclude = int(np.ceil(exclude_bins * zero_pad_factor))
+
+    # 2. Fundamental peak selection within restricted search band
+    if (min_freq is not None) or (max_freq is not None):
+        keep = np.ones(len(specFreq), dtype=bool)
+        if min_freq is not None:
+            keep &= (specFreq >= min_freq)
+        if max_freq is not None:
+            keep &= (specFreq <= max_freq)
+        specAbs_restricted = specAbs[keep]
+        specFreq_restricted = specFreq[keep]
+    else:
+        keep = np.ones(len(specFreq), dtype=bool)
+        specAbs_restricted, specFreq_restricted = specAbs, specFreq
+
+    if len(specAbs_restricted) == 0:
+        return {"rate": np.nan, "snr_dB": np.nan, "prominence": np.nan, "prominence_ratio": np.nan}
+
+    peakIdx_restricted = np.argmax(specAbs_restricted)
+    peakFreq = specFreq_restricted[peakIdx_restricted]
+
+    # 3. Harmonic Masking & Integration over full spectrum
+    signal_mask = np.zeros(len(specFreq), dtype=bool)
+    
+    for k in range(1, n_harmonics + 1):
+        target_freq = k * peakFreq
+        if specFreq[0] <= target_freq <= specFreq[-1]:
+            closest_bin = int(np.argmin(np.abs(specFreq - target_freq)))
+            lo = max(0, closest_bin - effective_exclude)
+            hi = min(len(specFreq), closest_bin + effective_exclude + 1)
+            signal_mask[lo:hi] = True
+
+    # Total signal power integrated over main lobes
+    signalPower = np.sum(specAbs[signal_mask] ** 2)
+    n_signal_bins = np.sum(signal_mask)
+
+    # 4. Noise power normalized to signal bandwidth
+    noise_mask = keep & (~signal_mask)
+    noise_bins_power = specAbs[noise_mask] ** 2
+
+    median_noise_per_bin = np.median(noise_bins_power) if len(noise_bins_power) > 0 else 1e-30
+    
+    # Scale per-bin noise by the number of bins used for signal integration
+    total_noise_power = median_noise_per_bin * n_signal_bins
+    snr_dB = 10 * np.log10(signalPower / max(total_noise_power, 1e-30))
+
+    # 5. Prominence calculation with boundary guard
+    if (min_freq is not None) and (max_freq is not None):
+        band_width = max_freq - min_freq
+        pad = band_width * prominence_pad_frac
+        prom_min = max(0, min_freq - pad)
+        prom_max = max_freq + pad
+        keep_prom = (specFreq >= prom_min) & (specFreq <= prom_max)
+        specAbs_prom, specFreq_prom = specAbs[keep_prom], specFreq[keep_prom]
+    else:
+        specAbs_prom, specFreq_prom = specAbs, specFreq
+
+    peakIdx_prom = int(np.argmin(np.abs(specFreq_prom - peakFreq)))
+
+    # Ensure index is a local maximum before calling peak_prominences
+    is_local_max = (
+        0 < peakIdx_prom < len(specAbs_prom) - 1
+        and specAbs_prom[peakIdx_prom] >= specAbs_prom[peakIdx_prom - 1]
+        and specAbs_prom[peakIdx_prom] >= specAbs_prom[peakIdx_prom + 1]
+    )
+
+    if is_local_max:
+        prominence = float(signal.peak_prominences(specAbs_prom, [peakIdx_prom])[0][0])
+    else:
+        prominence = float(specAbs_prom[peakIdx_prom] - np.min(specAbs_prom))
+
+    prominence_ratio = prominence / specAbs_prom[peakIdx_prom] if specAbs_prom[peakIdx_prom] > 0 else 0.0
+
+    return {
+        "rate": peakFreq,
+        "snr_dB": snr_dB,
+        "prominence": prominence,
+        "prominence_ratio": prominence_ratio
+    }
