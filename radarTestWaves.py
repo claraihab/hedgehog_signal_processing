@@ -23,7 +23,7 @@ USE_FFT_FILT    = False
 MIN_LOW_FREQ_HIB   = 0.2 #for breathing
 MAX_LOW_FREQ_HIB    = 3 #should decrease from 14
 MIN_HIGH_FREQ_HIB  = 4 #for heart rate
-MAX_HIGH_FREQ_HIB  = 20 
+MAX_HIGH_FREQ_HIB  = 17
 
 #normal, for dog or arousals
 NORMAL_LOW_FREQ_MIN   = 25 #for breathing
@@ -383,7 +383,7 @@ def runAwakeAnalysis(data_paths:list = None):
     into each recording's own folder.
     '''
     if data_paths is None:
-        data_paths = radarFilePaths2
+        data_paths = radarFilePaths1 #changed to run the arousal
 
     for data_path in data_paths:
         print(f"\nProcessing (awake config): {data_path}")
@@ -452,13 +452,13 @@ def runBothAnalyses(data_paths:list = None):
 
 
 #doggie so no hibernating rates
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    awake_rates = calcRatesOverTimeAwake(radarFilePaths3[0], PLOT_RANGE) 
-    awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
-    awake_rates_csv_path = os.path.join(radarFilePaths3[0], "awake_rates.csv")
-    awake_rates_df.to_csv(awake_rates_csv_path)
-    plotDistData(radarFilePaths3[0], True) 
+#     awake_rates = calcRatesOverTimeAwake(radarFilePaths3[0], PLOT_RANGE) 
+#     awake_rates_df = pd.DataFrame.from_dict(awake_rates) 
+#     awake_rates_csv_path = os.path.join(radarFilePaths3[0], "awake_rates.csv")
+#     awake_rates_df.to_csv(awake_rates_csv_path)
+#     plotDistData(radarFilePaths3[0], True) 
 
 
 
