@@ -205,22 +205,43 @@ if __name__ == "__main__":
     master.to_csv("master_table.csv", index=False)
     print("Saved master_table.csv")
 
-    # Plot summary histograms
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    for col_idx, (rate_col, label) in enumerate([
+    # Plot summary histograms (2x2 grid with state & metric specific color mapping)
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+
+    metrics = [
         ("Heart_Rate_BPM", "Heart Rate (bpm)"),
         ("Breathing_Rate_BPM", "Breathing Rate (bpm)"),
-    ]):
-        ax = axes[col_idx]
-        for state, color in [("hibernating", "tab:blue"), ("aroused", "tab:orange")]:
+    ]
+    states = ["hibernating", "aroused"]
+
+    # Color map for each (metric, state) combination
+    color_map = {
+        ("Heart_Rate_BPM", "hibernating"): "#fcb4b4",      # Light red
+        ("Heart_Rate_BPM", "aroused"):  "#f02727",          # Dark red
+        ("Breathing_Rate_BPM", "hibernating"):  "#b4d9dc", # Light blue
+        ("Breathing_Rate_BPM", "aroused"):  "#178d97",          # Darker blue
+    }
+
+    for col_idx, (rate_col, label) in enumerate(metrics):
+        for row_idx, state in enumerate(states):
+            ax = axes[row_idx, col_idx]
+            color = color_map[(rate_col, state)]
             sub = master[master["State"] == state][rate_col].dropna()
+
             if len(sub):
-                ax.hist(sub, bins=30, alpha=0.6, label=f"{state} (n={len(sub)})", color=color)
-        ax.set_title(f"{label} by state")
-        ax.set_xlabel(label)
-        ax.set_ylabel("Count")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+                ax.hist(
+                    sub,
+                    bins=30,
+                    alpha=0.7,
+                    color=color,
+                    edgecolor="black",
+                    linewidth=0.5,
+                )
+
+            ax.set_title(f"{label} — {state.capitalize()} (n={len(sub)})")
+            ax.set_xlabel(label)
+            ax.set_ylabel("Count")
+            ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
     plt.savefig("summary_histograms.png", dpi=150)
