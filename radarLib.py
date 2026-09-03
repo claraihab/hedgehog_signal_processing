@@ -832,12 +832,13 @@ def calcRateSNR3(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 
     signal_mask = np.zeros(len(specFreq), dtype=bool)
     
     for k in range(1, n_harmonics + 1):
-        target_freq = k * peakFreq
-        if specFreq[0] <= target_freq <= specFreq[-1]:
-            closest_bin = int(np.argmin(np.abs(specFreq - target_freq)))
-            lo = max(0, closest_bin - effective_exclude)
-            hi = min(len(specFreq), closest_bin + effective_exclude + 1)
-            signal_mask[lo:hi] = True
+        target_idx = peakIdx_restricted *k
+        if target_idx >= len(specFreq):
+            break   # abort loop because this and all higher harmonics out of FFT range
+        # create mask around harmonic of peak
+        lo = max(0, target_idx - effective_exclude)
+        hi = min(len(specFreq), target_idx + effective_exclude + 1)
+        signal_mask[lo:hi] = True
 
     # Total signal power integrated over main lobes
     signalPower = np.sum(specAbs[signal_mask] ** 2)
@@ -864,7 +865,8 @@ def calcRateSNR3(distData: np.ndarray, framerate_Hz: float, exclude_bins: int = 
     else:
         specAbs_prom, specFreq_prom = specAbs, specFreq
 
-    peakIdx_prom = int(np.argmin(np.abs(specFreq_prom - peakFreq)))
+    peakIdx_prom = int(np.argmin(np.abs(specFreq_prom - peakFreq)))     # das funktioniert so leider nicht :(
+
 
     # Ensure index is a local maximum before calling peak_prominences
     is_local_max = (
