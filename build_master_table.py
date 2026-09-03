@@ -204,12 +204,14 @@ if __name__ == "__main__":
     # Export master output
     master.to_csv("master_table.csv", index=False)
     print("Saved master_table.csv")
+    
+    master_a = master[master["Individual"] == "Hedgehog_A"].copy()
+    master_a.to_csv("master_tableA.csv", index=False)
 
-    # Plot summary histograms (2x2 grid with state & metric specific color mapping)
+    # Plot summary histograms 
     fig, axes = plt.subplots(2, 2, figsize=(10, 8))
 
-    metrics = [
-        ("Heart_Rate_BPM", "Heart Rate (bpm)"),
+    metrics = [("Heart_Rate_BPM", "Heart Rate (bpm)"),
         ("Breathing_Rate_BPM", "Breathing Rate (bpm)"),
     ]
     states = ["hibernating", "aroused"]
@@ -226,7 +228,7 @@ if __name__ == "__main__":
         for row_idx, state in enumerate(states):
             ax = axes[row_idx, col_idx]
             color = color_map[(rate_col, state)]
-            sub = master[master["State"] == state][rate_col].dropna()
+            sub = master_a[master_a["State"] == state][rate_col].dropna()
 
             if len(sub):
                 ax.hist(
@@ -244,14 +246,14 @@ if __name__ == "__main__":
             ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig("summary_histograms.png", dpi=150)
+    plt.savefig("summary_histograms.png", dpi=150) 
     print("Saved summary_histograms.png")
 
     # Save summary stats table
     rows = []
     for state in ["hibernating", "aroused"]:
         for rate_col in ["Heart_Rate_BPM", "Breathing_Rate_BPM"]:
-            sub = master[master["State"] == state][rate_col].dropna()
+            sub = master_a[master_a["State"] == state][rate_col].dropna()
             if len(sub):
                 rows.append({
                     "State": state, "Metric": rate_col, "N": len(sub),
