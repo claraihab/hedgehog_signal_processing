@@ -25,8 +25,8 @@ MAX_LOW_FREQ_HIB    = 3 #should decrease from 14
 MIN_HIGH_FREQ_HIB  = 4 #for heart rate
 MAX_HIGH_FREQ_HIB  = 17
 
-#normal, for dog or arousals
-NORMAL_LOW_FREQ_MIN   = 25 #for breathing
+#for arousals
+NORMAL_LOW_FREQ_MIN   = 25 #for breathing 
 NORMAL_LOW_FREQ_MAX = 50
 NORMAL_HIGH_FREQ_MIN  = 180 #for heart rate
 NORMAL_HIGH_FREQ_MAX   = 280 
